@@ -1,0 +1,45 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local IDE / OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Runtime outputs
+/backend_outputs/
+/cross-contract_detection/cross-contract_detection/generated_copy/
+/cross-contract_detection/cross-contract_detection/generated/
+/cross-contract_detection/cross-contract_detection/**/generated_copy/
+
+# Large generated datasets and archives that are not needed by the backend service
+/dataset/
+/generated_smart_contracts/
+/result/
+/result_evaluation/
+/unknown_detect/
+/classification_vulnerabilities/
+/data_processing/
+/cross-contract_detection.zip
+/generated_text.csv
+
+# Training/intermediate feature dumps under LG-DeepSVDD.
+# Keep deployed model files under:
+# - LG-DeepSVDD/pretrain/semantic features/LSTM/outputs/*.h5
+# - LG-DeepSVDD/pretrain/semantic features/LSTM/tok.pickle
+# - LG-DeepSVDD/DeepSVDD/outputs/models/*.h5
+/LG-DeepSVDD/result/contractward/features/
+/LG-DeepSVDD/**/__pycache__/
+
+# Local secrets
+.env
+.env.*
+!.env.example
+
