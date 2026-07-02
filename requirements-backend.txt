@@ -3,6 +3,7 @@ fastapi
 uvicorn[standard]
 python-multipart
 numpy
+psycopg[binary]
 
 # LSTM .h5 inference
 tensorflow==2.20.0

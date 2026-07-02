@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import traceback
 import uuid
@@ -11,18 +12,22 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
+from backend.api.security import hash_password, hash_token, new_access_token, session_expires_at, verify_password
+from backend.persistence import get_store
 from backend.reporting.markdown_report import write_markdown
 from backend.run_audit import run_audit
 from backend.schemas import AuditRequest
 
 try:
-    from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+    from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import FileResponse
+    from pydantic import BaseModel
 except Exception:  # pragma: no cover - FastAPI is optional during backend scaffolding.
-    FastAPI = File = Form = HTTPException = UploadFile = None
+    Depends = FastAPI = File = Form = Header = HTTPException = UploadFile = None
     CORSMiddleware = None
     FileResponse = None
+    BaseModel = object
 
 
 API_OUTPUT_ROOT = Path("backend_outputs") / "api_tasks"
@@ -45,9 +50,46 @@ _executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 _lock = Lock()
 _tasks: Dict[str, Dict[str, Any]] = {}
 _futures: Dict[str, Future] = {}
+_store = get_store()
+
+
+def bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        return None
+    token = authorization[len(prefix) :].strip()
+    return token or None
+
+
+def optional_current_user(authorization: Optional[str] = Header(None) if Header is not None else None) -> Optional[dict]:
+    token = bearer_token(authorization)
+    if not token or _store is None:
+        return None
+    try:
+        return _store.get_user_by_token_hash(hash_token(token))
+    except Exception:
+        return None
+
+
+def require_current_user(authorization: Optional[str] = Header(None) if Header is not None else None) -> dict:
+    user = optional_current_user(authorization)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    return user
 
 
 if FastAPI is not None:
+    class RegisterRequest(BaseModel):
+        username: str
+        password: str
+        display_name: Optional[str] = None
+
+    class LoginRequest(BaseModel):
+        username: str
+        password: str
+
     app = FastAPI(
         title="SCG Multi-Model Audit Backend",
         version="0.2.0",
@@ -61,6 +103,13 @@ if FastAPI is not None:
         allow_headers=["*"],
     )
 
+    @app.on_event("startup")
+    def startup() -> None:
+        try:
+            init_persistence()
+        except Exception:
+            return
+
     @app.get("/api/v1/health")
     def health() -> dict:
         load_existing_tasks()
@@ -72,10 +121,60 @@ if FastAPI is not None:
             "max_workers": MAX_WORKERS,
             "output_root": str(API_OUTPUT_ROOT.resolve()),
             "task_counts": counts,
+            "database": database_status(),
         }
 
+    @app.post("/api/v1/auth/register")
+    def register(request: RegisterRequest) -> dict:
+        store = require_store()
+        username = request.username.strip()
+        if len(username) < 3:
+            raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
+        if len(request.password) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+        password_hash, salt, iterations = hash_password(request.password)
+        try:
+            user = store.create_user(username, password_hash, salt, iterations, request.display_name)
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                raise HTTPException(status_code=409, detail="Username already exists.") from exc
+            raise
+        token = new_access_token()
+        store.create_session(str(user["id"]), hash_token(token), session_expires_at())
+        return {"user": public_user(user), "access_token": token, "token_type": "bearer"}
+
+    @app.post("/api/v1/auth/login")
+    def login(request: LoginRequest) -> dict:
+        store = require_store()
+        user = store.get_user_by_username(request.username.strip())
+        if user is None or not verify_password(
+            request.password,
+            user["password_hash"],
+            user["password_salt"],
+            int(user["password_iterations"]),
+        ):
+            raise HTTPException(status_code=401, detail="Invalid username or password.")
+        token = new_access_token()
+        store.create_session(str(user["id"]), hash_token(token), session_expires_at())
+        return {"user": public_user(user), "access_token": token, "token_type": "bearer"}
+
+    @app.get("/api/v1/auth/me")
+    def me(current_user: dict = Depends(require_current_user)) -> dict:
+        return {"user": public_user(current_user)}
+
+    @app.post("/api/v1/auth/logout")
+    def logout(authorization: Optional[str] = Header(None)) -> dict:
+        token = bearer_token(authorization)
+        if token and _store is not None:
+            _store.delete_session(hash_token(token))
+        return {"status": "ok"}
+
     @app.post("/api/v1/audits")
-    def create_audit(request: AuditRequest, async_run: bool = True) -> dict:
+    def create_audit(
+        request: AuditRequest,
+        async_run: bool = True,
+        current_user: Optional[dict] = Depends(optional_current_user),
+    ) -> dict:
         task_id = request.task_id or new_task_id()
         normalized = AuditRequest(
             task_id=task_id,
@@ -88,7 +187,7 @@ if FastAPI is not None:
             background_screening_action=request.background_screening_action,
             output_dir=str(task_output_dir(task_id)),
         )
-        create_task_record(task_id, normalized, source_kind="path")
+        create_task_record(task_id, normalized, source_kind="path", user_id=user_id(current_user))
         if async_run:
             submit_audit(normalized)
             return task_response(task_id)
@@ -105,6 +204,7 @@ if FastAPI is not None:
         background_risk_screening: bool = Form(True),
         background_screening_action: str = Form("warn_only"),
         async_run: bool = Form(True),
+        current_user: Optional[dict] = Depends(optional_current_user),
     ) -> dict:
         task_id = new_task_id()
         upload_dir = upload_task_dir(task_id)
@@ -130,7 +230,15 @@ if FastAPI is not None:
             background_screening_action=background_screening_action,
             output_dir=str(task_output_dir(task_id)),
         )
-        create_task_record(task_id, request, source_kind="upload", upload_path=str(upload_path))
+        create_task_record(
+            task_id,
+            request,
+            source_kind="upload",
+            upload_path=str(upload_path),
+            user_id=user_id(current_user),
+            source_size=len(data),
+            source_sha256=sha256_bytes(data),
+        )
         if async_run:
             submit_audit(request)
             return task_response(task_id)
@@ -138,12 +246,22 @@ if FastAPI is not None:
         return task_response(task_id)
 
     @app.get("/api/v1/audits")
-    def list_audits(status: Optional[str] = None, limit: int = 50, offset: int = 0) -> dict:
+    def list_audits(
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        current_user: Optional[dict] = Depends(optional_current_user),
+    ) -> dict:
         load_existing_tasks()
         limit = max(1, min(limit, 200))
         offset = max(0, offset)
         with _lock:
             all_items = list(_tasks.values())
+        current_user_id = user_id(current_user)
+        if current_user_id:
+            all_items = [item for item in all_items if item.get("user_id") == current_user_id]
+        else:
+            all_items = [item for item in all_items if not item.get("user_id")]
         if status:
             wanted = {item.strip() for item in status.split(",") if item.strip()}
             all_items = [item for item in all_items if item.get("status") in wanted]
@@ -157,14 +275,20 @@ if FastAPI is not None:
         }
 
     @app.post("/api/v1/audits/{task_id}/cancel")
-    def cancel_audit(task_id: str) -> dict:
+    def cancel_audit(task_id: str, current_user: Optional[dict] = Depends(optional_current_user)) -> dict:
         ensure_task_loaded(task_id)
+        check_task_access(get_record_or_404(task_id), current_user)
         return cancel_task(task_id)
 
     @app.post("/api/v1/audits/{task_id}/retry")
-    def retry_audit(task_id: str, async_run: bool = True) -> dict:
+    def retry_audit(
+        task_id: str,
+        async_run: bool = True,
+        current_user: Optional[dict] = Depends(optional_current_user),
+    ) -> dict:
         ensure_task_loaded(task_id)
         old_record = get_record_or_404(task_id)
+        check_task_access(old_record, current_user)
         old_status = old_record.get("status")
         if old_status not in TERMINAL_STATUSES:
             raise HTTPException(status_code=409, detail=f"Task is {old_status}, only terminal tasks can be retried.")
@@ -181,6 +305,9 @@ if FastAPI is not None:
             source_kind=old_record.get("source_kind", "path"),
             retried_from=task_id,
             upload_path=old_record.get("upload_path"),
+            user_id=old_record.get("user_id"),
+            source_size=old_record.get("source_size"),
+            source_sha256=old_record.get("source_sha256"),
         )
         if async_run:
             submit_audit(request)
@@ -189,9 +316,14 @@ if FastAPI is not None:
         return task_response(new_id)
 
     @app.delete("/api/v1/audits/{task_id}")
-    def delete_audit(task_id: str, delete_upload: bool = False) -> dict:
+    def delete_audit(
+        task_id: str,
+        delete_upload: bool = False,
+        current_user: Optional[dict] = Depends(optional_current_user),
+    ) -> dict:
         ensure_task_loaded(task_id)
         record = get_record_or_404(task_id)
+        check_task_access(record, current_user)
         status = record.get("status")
         if status in ACTIVE_STATUSES:
             raise HTTPException(status_code=409, detail=f"Task is {status}, cancel it before deleting.")
@@ -200,6 +332,7 @@ if FastAPI is not None:
         with _lock:
             _tasks.pop(task_id, None)
             _futures.pop(task_id, None)
+        delete_persisted_task(task_id)
         if output_dir.exists():
             shutil.rmtree(output_dir)
         if delete_upload and upload_path is not None:
@@ -214,20 +347,23 @@ if FastAPI is not None:
         }
 
     @app.get("/api/v1/audits/{task_id}")
-    def get_audit_status(task_id: str) -> dict:
+    def get_audit_status(task_id: str, current_user: Optional[dict] = Depends(optional_current_user)) -> dict:
         ensure_task_loaded(task_id)
+        check_task_access(get_record_or_404(task_id), current_user)
         return task_response(task_id)
 
     @app.get("/api/v1/audits/{task_id}/events")
-    def get_audit_events(task_id: str) -> dict:
+    def get_audit_events(task_id: str, current_user: Optional[dict] = Depends(optional_current_user)) -> dict:
         ensure_task_loaded(task_id)
         record = get_record_or_404(task_id)
+        check_task_access(record, current_user)
         return {"task_id": task_id, "events": record.get("events", [])}
 
     @app.get("/api/v1/audits/{task_id}/report")
-    def get_audit_report(task_id: str) -> dict:
+    def get_audit_report(task_id: str, current_user: Optional[dict] = Depends(optional_current_user)) -> dict:
         ensure_task_loaded(task_id)
         record = get_record_or_404(task_id)
+        check_task_access(record, current_user)
         if record.get("status") != "succeeded":
             raise HTTPException(status_code=409, detail=f"Task is {record.get('status')}, report is not ready.")
         report_path = task_output_dir(task_id) / f"{task_id}.json"
@@ -236,16 +372,17 @@ if FastAPI is not None:
         return json.loads(report_path.read_text(encoding="utf-8"))
 
     @app.get("/api/v1/audits/{task_id}/report.json")
-    def download_json_report(task_id: str):
-        return download_report_file(task_id, "json")
+    def download_json_report(task_id: str, current_user: Optional[dict] = Depends(optional_current_user)):
+        return download_report_file(task_id, "json", current_user)
 
     @app.get("/api/v1/audits/{task_id}/report.md")
-    def download_markdown_report(task_id: str):
-        return download_report_file(task_id, "md")
+    def download_markdown_report(task_id: str, current_user: Optional[dict] = Depends(optional_current_user)):
+        return download_report_file(task_id, "md", current_user)
 
     @app.get("/api/v1/audits/{task_id}/artifacts")
-    def list_artifacts(task_id: str) -> dict:
+    def list_artifacts(task_id: str, current_user: Optional[dict] = Depends(optional_current_user)) -> dict:
         ensure_task_loaded(task_id)
+        check_task_access(get_record_or_404(task_id), current_user)
         output_dir = task_output_dir(task_id)
         if not output_dir.exists():
             return {"task_id": task_id, "artifacts": []}
@@ -287,6 +424,13 @@ def run_task(request: AuditRequest) -> None:
         markdown_path = output_dir / f"{request.task_id}.md"
         json_path.write_text(json.dumps(asdict(report), ensure_ascii=False, indent=2), encoding="utf-8")
         write_markdown(report, markdown_path)
+        summary = {
+            "findings": len(report.findings),
+            "warnings": len(report.warnings),
+            "functions": len(report.risk_vectors),
+            "evidence_count": report.metadata.get("evidence_count"),
+            "model_counts": report.metadata.get("evidence_center", {}).get("model_counts", {}),
+        }
         if is_cancel_requested(request.task_id):
             mark_task(
                 request.task_id,
@@ -304,14 +448,9 @@ def run_task(request: AuditRequest) -> None:
             updated_at=utc_now(),
             report_json=str(json_path),
             report_markdown=str(markdown_path),
-            summary={
-                "findings": len(report.findings),
-                "warnings": len(report.warnings),
-                "functions": len(report.risk_vectors),
-                "evidence_count": report.metadata.get("evidence_count"),
-                "model_counts": report.metadata.get("evidence_center", {}).get("model_counts", {}),
-            },
+            summary=summary,
         )
+        persist_report_artifacts(request.task_id, asdict(report), json_path, markdown_path)
     except Exception as exc:
         if is_cancel_requested(request.task_id):
             mark_task(
@@ -438,6 +577,7 @@ def write_status(record: dict) -> None:
     output_dir = task_output_dir(record["task_id"])
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "status.json").write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    persist_task_record(record)
 
 
 def cancel_task(task_id: str) -> dict:
@@ -510,9 +650,113 @@ def status_counts(records) -> dict:
     return counts
 
 
-def download_report_file(task_id: str, suffix: str):
+def init_persistence() -> None:
+    if _store is None:
+        return
+    _store.init_schema()
+
+
+def database_status() -> dict:
+    if _store is None:
+        return {"configured": False, "ready": False}
+    try:
+        init_persistence()
+    except Exception as exc:
+        return {"configured": True, "ready": False, "error": f"{type(exc).__name__}: {exc}"}
+    return {"configured": True, "ready": True}
+
+
+def require_store():
+    if _store is None:
+        raise HTTPException(status_code=503, detail="Database is not configured. Set SCG_DATABASE_URL.")
+    try:
+        init_persistence()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database is not ready: {type(exc).__name__}: {exc}") from exc
+    return _store
+
+
+def public_user(user: dict) -> dict:
+    return {
+        "id": str(user.get("id")),
+        "username": user.get("username"),
+        "display_name": user.get("display_name"),
+        "created_at": str(user.get("created_at")) if user.get("created_at") is not None else None,
+        "updated_at": str(user.get("updated_at")) if user.get("updated_at") is not None else None,
+    }
+
+
+def user_id(user: Optional[dict]) -> Optional[str]:
+    return str(user["id"]) if user and user.get("id") else None
+
+
+def check_task_access(record: dict, current_user: Optional[dict]) -> None:
+    owner_id = record.get("user_id")
+    if not owner_id:
+        return
+    current_user_id = user_id(current_user)
+    if current_user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required for this task.")
+    if current_user_id != owner_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this task.")
+
+
+def persist_task_record(record: dict) -> None:
+    if _store is None:
+        return
+    try:
+        _store.upsert_task(dict(record))
+    except Exception as exc:
+        record["persistence_error"] = f"{type(exc).__name__}: {exc}"
+
+
+def persist_report_artifacts(task_id: str, report_json: dict, json_path: Path, markdown_path: Path) -> None:
+    if _store is None:
+        return
+    with _lock:
+        record = dict(_tasks.get(task_id) or {})
+    try:
+        markdown_text = markdown_path.read_text(encoding="utf-8") if markdown_path.exists() else None
+        _store.upsert_report(
+            task_id=task_id,
+            user_id=record.get("user_id"),
+            report_json=report_json,
+            report_markdown=markdown_text,
+            report_json_path=str(json_path),
+            report_markdown_path=str(markdown_path),
+            summary=record.get("summary"),
+        )
+        for path in [json_path, markdown_path]:
+            if path.exists():
+                _store.upsert_artifact(
+                    task_id=task_id,
+                    name=path.name,
+                    path=str(path),
+                    size=path.stat().st_size,
+                    artifact_type=path.suffix.lstrip(".") or "file",
+                    download_url=artifact_download_url(task_id, path.name) or "",
+                )
+    except Exception as exc:
+        mark_task(task_id, persistence_error=f"{type(exc).__name__}: {exc}", updated_at=utc_now())
+
+
+def delete_persisted_task(task_id: str) -> None:
+    if _store is None:
+        return
+    try:
+        _store.delete_task(task_id)
+    except Exception:
+        return
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def download_report_file(task_id: str, suffix: str, current_user: Optional[dict] = None):
     ensure_task_loaded(task_id)
     record = get_record_or_404(task_id)
+    check_task_access(record, current_user)
     if record.get("status") != "succeeded":
         raise HTTPException(status_code=409, detail=f"Task is {record.get('status')}, report is not ready.")
     path = task_output_dir(task_id) / f"{task_id}.{suffix}"

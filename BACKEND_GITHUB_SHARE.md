@@ -72,6 +72,12 @@ For real opcode/embedding generation, keep `SCG_ENABLE_REAL_OPCODE` unset or set
 
 LLM API keys should stay outside Git. Put them in local environment variables such as `SCG_LLM_API_KEY`.
 
+Supabase/PostgreSQL is used for web persistence. Put the database connection string in `SCG_DATABASE_URL` or `SUPABASE_DB_URL`; the backend creates the required tables on startup.
+
+```powershell
+$env:SCG_DATABASE_URL="postgresql://postgres:<password>@<host>:5432/postgres?sslmode=require"
+```
+
 ## Web API
 
 Start the FastAPI backend from the project root:
@@ -83,6 +89,10 @@ C:\Users\20302\AppData\Local\conda\conda\envs\SWC\python.exe -m uvicorn backend.
 Useful endpoints:
 
 - `GET /api/v1/health`
+- `POST /api/v1/auth/register` with `username`, `password`, and optional `display_name`
+- `POST /api/v1/auth/login` with `username` and `password`
+- `GET /api/v1/auth/me` with `Authorization: Bearer <token>`
+- `POST /api/v1/auth/logout` with `Authorization: Bearer <token>`
 - `POST /api/v1/audits` for JSON requests using an existing local `source_path`
 - `POST /api/v1/audits/upload` for `.sol` or `.zip` uploads
 - `GET /api/v1/audits?status=running,queued&limit=50&offset=0` for paged task listing
@@ -96,4 +106,14 @@ Useful endpoints:
 - `GET /api/v1/audits/{task_id}/report.md` for Markdown download
 - `GET /api/v1/audits/{task_id}/artifacts` for generated artifact listing
 
-Task records include `status`, `progress`, `events`, `can_cancel`, `can_retry`, and `can_delete` fields for the web UI. Uploaded files are stored under `backend_outputs/uploads/`; task status and reports are stored under `backend_outputs/api_tasks/`.
+Task records include `status`, `progress`, `events`, `can_cancel`, `can_retry`, and `can_delete` fields for the web UI. When a bearer token is provided, uploaded contracts, task records, task events, reports, artifacts, and user ownership are persisted to Supabase/PostgreSQL; owned task status, artifacts, and downloads require the same user token. Passwords are stored as salted PBKDF2-HMAC-SHA256 hashes, and session tokens are stored only as SHA-256 hashes. Uploaded files are still stored under `backend_outputs/uploads/`; local task status and reports are still mirrored under `backend_outputs/api_tasks/`.
+
+Created database tables:
+
+- `scg_users`
+- `scg_sessions`
+- `scg_contracts`
+- `scg_audit_tasks`
+- `scg_audit_events`
+- `scg_audit_reports`
+- `scg_audit_artifacts`
