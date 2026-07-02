@@ -71,3 +71,24 @@ $env:SCG_GCN_PYTHON="C:\Users\20302\AppData\Local\conda\conda\envs\SWC\python.ex
 For real opcode/embedding generation, keep `SCG_ENABLE_REAL_OPCODE` unset or set it to `1`. If you need to use an external compiler instead of the bundled solcjs wrapper, set `SCG_SOLC_PATH`.
 
 LLM API keys should stay outside Git. Put them in local environment variables such as `SCG_LLM_API_KEY`.
+
+## Web API
+
+Start the FastAPI backend from the project root:
+
+```powershell
+C:\Users\20302\AppData\Local\conda\conda\envs\SWC\python.exe -m uvicorn backend.api.app:app --host 0.0.0.0 --port 8000
+```
+
+Useful endpoints:
+
+- `GET /api/v1/health`
+- `POST /api/v1/audits` for JSON requests using an existing local `source_path`
+- `POST /api/v1/audits/upload` for `.sol` or `.zip` uploads
+- `GET /api/v1/audits/{task_id}` for task status
+- `GET /api/v1/audits/{task_id}/report` for JSON report content
+- `GET /api/v1/audits/{task_id}/report.json` for JSON download
+- `GET /api/v1/audits/{task_id}/report.md` for Markdown download
+- `GET /api/v1/audits/{task_id}/artifacts` for generated artifact listing
+
+Uploaded files are stored under `backend_outputs/uploads/`; task status and reports are stored under `backend_outputs/api_tasks/`.

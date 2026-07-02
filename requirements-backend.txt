@@ -1,6 +1,7 @@
 # Core backend
 fastapi
 uvicorn[standard]
+python-multipart
 numpy
 
 # LSTM .h5 inference
@@ -12,4 +13,3 @@ antlr4-python3-runtime==4.7.2
 
 # Optional model / metric utilities used by legacy scripts
 scikit-learn
-
