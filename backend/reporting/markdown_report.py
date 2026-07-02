@@ -73,6 +73,7 @@ def render_markdown(report: AuditReport) -> str:
             f"### {warning.warning_id} {warning.target_vulnerability}",
             "",
             f"- 目标位置：`{warning.contract_name}.{warning.function_signature}`",
+            f"- 状态：`{translate_status(warning.status)}`",
             f"- 风险分数：`{warning.score:.2f}`",
             f"- 摘要：{warning.summary}",
             f"- 推荐操作：`{translate_action(warning.recommended_action.get('action'))}`",
@@ -100,6 +101,8 @@ def translate_status(status: str) -> str:
         "in_scope": "范围内",
         "out_of_scope": "范围外",
         "screening_warning": "筛查警告",
+        "rejected_false_positive": "已降级为误报",
+        "anomaly_warning": "行为异常警告",
         "unknown": "未知",
     }
     return mapping.get(str(status), str(status))
@@ -118,6 +121,8 @@ def translate_action(action: str | None) -> str:
     mapping = {
         "start_new_scan": "发起对应专项检测",
         "review_high_risk_function": "人工复核高风险函数",
+        "review_rejected_result": "复核已降级结论",
+        "review_anomaly": "复核行为异常信号",
     }
     if not action:
         return "无"

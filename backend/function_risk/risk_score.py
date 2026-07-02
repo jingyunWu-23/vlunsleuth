@@ -139,6 +139,8 @@ def compute_r_selected(
     components: Dict[str, Any],
     vulnerability: str,
 ) -> float:
+    if not semantic_category_allowed(fn, vulnerability):
+        return 0.0
     lstm = max(
         (
             ev.calibrated_confidence
@@ -169,6 +171,8 @@ def compute_r_warning(r_func: float, e_category: float, q_evidence: float) -> fl
 
 
 def category_evidence_score(fn: FunctionUnit, evidences: List[ModelEvidence], category: str) -> float:
+    if not semantic_category_allowed(fn, category):
+        return 0.0
     knowledge = knowledge_category_score(evidences, category)
     static = static_category_score(fn, category)
     gcn = max((ev.calibrated_confidence for ev in evidences if ev.model_id.startswith("GCN")), default=0.0)
@@ -177,6 +181,8 @@ def category_evidence_score(fn: FunctionUnit, evidences: List[ModelEvidence], ca
 
 
 def evidence_quality_score(fn: FunctionUnit, evidences: List[ModelEvidence], category: str) -> float:
+    if not semantic_category_allowed(fn, category):
+        return 0.0
     sources = category_sources(fn, evidences, category)
     if not sources:
         return 0.0
@@ -192,6 +198,8 @@ def evidence_quality_score(fn: FunctionUnit, evidences: List[ModelEvidence], cat
 
 
 def static_category_score(fn: FunctionUnit, category: str) -> float:
+    if not semantic_category_allowed(fn, category):
+        return 0.0
     dangerous = set(fn.features.get("dangerous_apis", []))
     score = 0.0
     if category == "VULN_REENTRANCY":
@@ -256,6 +264,8 @@ def category_consistency(evidences: List[ModelEvidence], category: str) -> float
 
 
 def category_sources(fn: FunctionUnit, evidences: List[ModelEvidence], category: str) -> Set[str]:
+    if not semantic_category_allowed(fn, category):
+        return set()
     sources: Set[str] = set()
     if static_category_score(fn, category) > 0:
         sources.add("static")
@@ -268,6 +278,36 @@ def category_sources(fn: FunctionUnit, evidences: List[ModelEvidence], category:
             ):
                 sources.add("model")
     return sources
+
+
+def semantic_category_allowed(fn: FunctionUnit, category: str) -> bool:
+    """Hard semantic guards used to suppress impossible vulnerability labels."""
+    category = normalize_vulnerability(category)
+    dangerous = set(fn.features.get("dangerous_apis", []))
+    read_only = is_read_only_function(fn)
+    has_state_update = bool(fn.features.get("state_update"))
+    has_external = bool(dangerous.intersection({"low_level_call", "send", "transfer", "delegatecall"}))
+
+    if category == "VULN_UNKNOWN_ANOMALY":
+        return True
+    if category == "VULN_REENTRANCY":
+        return (not read_only) and has_state_update and bool(dangerous.intersection({"low_level_call", "send", "transfer"}))
+    if category == "VULN_UNCHECKED_LOW_LEVEL_CALLS":
+        return (not read_only) and "low_level_call" in dangerous and bool(fn.features.get("unchecked_low_level_call"))
+    if category == "VULN_TIMESTAMP":
+        return "timestamp" in dangerous
+    if category == "VULN_DELEGATECALL":
+        return (not read_only) and "delegatecall" in dangerous
+    if category == "VULN_CROSS_CONTRACT_RISK":
+        return has_external or bool(fn.external_calls)
+    return True
+
+
+def is_read_only_function(fn: FunctionUnit) -> bool:
+    mutability = (fn.mutability or "").lower()
+    signature = (fn.signature or "").lower()
+    code = (fn.code or "").lower()
+    return mutability in {"view", "pure"} or " view " in f" {signature} " or " pure " in f" {signature} " or " view " in f" {code} " or " pure " in f" {code} "
 
 
 def consistency_score(evidences: List[ModelEvidence]) -> float:
