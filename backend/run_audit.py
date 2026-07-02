@@ -6,6 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from backend.agents.reasoning_localization_agent import build_findings_and_warnings
+from backend.agents.slither_verification_agent import verify_report_with_slither
 from backend.evidence.evidence_center import EvidenceCenter
 from backend.function_risk.reasoning_gate import select_reasoning_targets
 from backend.function_risk.risk_score import compute_risk_vectors
@@ -66,7 +67,7 @@ def run_audit(request: AuditRequest) -> AuditReport:
         reasoning_selection=reasoning_selection,
         knowledge_contexts=knowledge_contexts,
     )
-    return AuditReport(
+    report = AuditReport(
         task_id=request.task_id,
         mode=request.mode,
         workflow=workflow.as_dict(),
@@ -89,6 +90,17 @@ def run_audit(request: AuditRequest) -> AuditReport:
             "adapter_results": adapter_results_to_metadata(adapter_results),
         },
     )
+    if request.need_verification:
+        verification_output_dir = Path(request.output_dir) if request.output_dir else None
+        report.metadata["verification"] = {
+            "slither": verify_report_with_slither(
+                report,
+                analysis.functions,
+                request.source_path,
+                output_dir=verification_output_dir,
+            )
+        }
+    return report
 
 
 def parse_args() -> argparse.Namespace:

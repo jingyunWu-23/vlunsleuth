@@ -63,6 +63,16 @@ def render_markdown(report: AuditReport) -> str:
             goal = finding.verification_plan.get("goal")
             if goal:
                 lines.append(f"- 验证目标：{goal}")
+            slither = finding.verification_plan.get("slither")
+            if slither:
+                lines.append(f"- Slither 验证：`{translate_verification_status(slither.get('status'))}`")
+                if slither.get("summary"):
+                    lines.append(f"- Slither 结论：{slither.get('summary')}")
+                matched = slither.get("matched_detectors") or []
+                if matched:
+                    checks = ", ".join(str(item.get("check")) for item in matched if item.get("check"))
+                    if checks:
+                        lines.append(f"- Slither 命中规则：`{checks}`")
         if finding.repair_suggestion:
             strategy = finding.repair_suggestion.get("strategy")
             if strategy:
@@ -124,6 +134,7 @@ def translate_vulnerability(vulnerability: str | None) -> str:
 def translate_status(status: str) -> str:
     mapping = {
         "suspected": "疑似",
+        "confirmed": "已确认",
         "inconclusive": "无法确定",
         "rejected": "已排除",
         "in_scope": "范围内",
@@ -133,6 +144,21 @@ def translate_status(status: str) -> str:
         "anomaly_warning": "行为异常警告",
         "unknown": "未知",
     }
+    return mapping.get(str(status), str(status))
+
+
+def translate_verification_status(status: str | None) -> str:
+    mapping = {
+        "confirmed": "已确认",
+        "not_confirmed": "未确认",
+        "completed": "已完成",
+        "unavailable": "工具未安装",
+        "timeout": "执行超时",
+        "error": "执行失败",
+        "unknown": "未知",
+    }
+    if not status:
+        return "未知"
     return mapping.get(str(status), str(status))
 
 
