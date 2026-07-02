@@ -24,10 +24,25 @@ SWC_TO_VULN = {
 
 VULN_ALIASES = {
     "reentrancy": "VULN_REENTRANCY",
+    "reentrant": "VULN_REENTRANCY",
+    "lstm_reentrancy": "VULN_REENTRANCY",
     "timestamp": "VULN_TIMESTAMP",
+    "timestamp_dependency": "VULN_TIMESTAMP",
+    "lstm_timestamp": "VULN_TIMESTAMP",
     "delegatecall": "VULN_DELEGATECALL",
+    "lstm_delegatecall": "VULN_DELEGATECALL",
     "SBunchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
     "unchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "unchecked low level calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "unchecked-low-level-calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "lstm_unchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "lstm_sbunchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "gcn": "VULN_CROSS_CONTRACT_RISK",
+    "cross_contract": "VULN_CROSS_CONTRACT_RISK",
+    "cross_contract_risk": "VULN_CROSS_CONTRACT_RISK",
+    "deepsvdd": "VULN_UNKNOWN_ANOMALY",
+    "unknown_anomaly": "VULN_UNKNOWN_ANOMALY",
+    "anomaly": "VULN_UNKNOWN_ANOMALY",
 }
 
 
@@ -367,6 +382,12 @@ def normalize_vulnerability(vulnerability: str | None) -> str:
         return SWC_TO_VULN[vulnerability]
     if vulnerability.startswith("VULN_"):
         return vulnerability
+    key = vulnerability.strip().lower()
+    if key in VULN_ALIASES:
+        return VULN_ALIASES[key]
+    compact_key = key.replace("-", "_").replace(" ", "_")
+    if compact_key in VULN_ALIASES:
+        return VULN_ALIASES[compact_key]
     upper = vulnerability.upper()
     for alias, canonical in VULN_ALIASES.items():
         if alias.upper() in upper:

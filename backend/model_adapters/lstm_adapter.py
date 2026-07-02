@@ -16,6 +16,13 @@ LSTM_VULNERABILITIES = {
     "SBunchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
 }
 
+LSTM_MODEL_IDS = {
+    "reentrancy": "LSTM_REENTRANCY",
+    "timestamp": "LSTM_TIMESTAMP",
+    "delegatecall": "LSTM_DELEGATECALL",
+    "SBunchecked_low_level_calls": "LSTM_UNCHECKED_LOW_LEVEL_CALLS",
+}
+
 LSTM_MODEL_FILES = {
     "reentrancy": "lstm_scg_reentrancy_gen0.h5",
     "timestamp": "lstm_scg_timestamp_gen1000.h5",
@@ -82,7 +89,7 @@ class LSTMAdapter(DetectionModel):
                     continue
                 evidences.append(ModelEvidence(
                     evidence_id=f"{analysis.task_id}-lstm-{canonical}-{abs(hash(fn.function_id))}",
-                    model_id=f"LSTM_{canonical.upper()}",
+                    model_id=LSTM_MODEL_IDS.get(canonical, f"LSTM_{canonical.upper()}"),
                     scope="function",
                     contract_name=fn.contract_name,
                     function_signature=fn.signature,
@@ -244,9 +251,20 @@ def normalize_vulnerability(vulnerability: str) -> str:
         "VULN_TIMESTAMP": "timestamp",
         "VULN_DELEGATECALL": "delegatecall",
         "VULN_UNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
+        "LSTM_REENTRANCY": "reentrancy",
+        "LSTM_TIMESTAMP": "timestamp",
+        "LSTM_DELEGATECALL": "delegatecall",
+        "LSTM_UNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
+        "LSTM_SBUNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
         "unchecked_low_level_calls": "SBunchecked_low_level_calls",
+        "unchecked-low-level-calls": "SBunchecked_low_level_calls",
+        "unchecked low level calls": "SBunchecked_low_level_calls",
     }
-    return mapping.get(vulnerability, vulnerability)
+    if vulnerability in mapping:
+        return mapping[vulnerability]
+    key = vulnerability.strip().lower()
+    compact_key = key.replace("-", "_").replace(" ", "_")
+    return mapping.get(key, mapping.get(compact_key, vulnerability))
 
 
 def clamp(value: float) -> float:

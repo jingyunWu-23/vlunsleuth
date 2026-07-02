@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from pathlib import Path
 
+from backend.function_risk.risk_score import normalize_vulnerability
 from backend.schemas import AuditReport
 
 
@@ -33,12 +34,14 @@ def render_markdown(report: AuditReport) -> str:
             f"{vector.gcn_score:.2f} | {vector.knowledge_score:.2f} | {vector.consistency_score:.2f} | "
             f"{vector.protection_score:.2f} |"
         )
+
     lines.extend(["", "## 正式漏洞发现", ""])
     if not report.findings:
         lines.append("未生成正式漏洞发现。")
     for finding in report.findings:
+        vuln_label = format_vulnerability_label(finding.vulnerability_id)
         lines.extend([
-            f"### {finding.finding_id} {finding.vulnerability_id}",
+            f"### {finding.finding_id} {vuln_label}",
             "",
             f"- 目标位置：`{finding.contract_name}.{finding.function_signature}`",
             f"- 状态：`{translate_status(finding.status)}`",
@@ -65,12 +68,14 @@ def render_markdown(report: AuditReport) -> str:
             if strategy:
                 lines.append(f"- 修复策略：{strategy}")
         lines.append("")
+
     lines.extend(["## 范围外风险警告", ""])
     if not report.warnings:
         lines.append("未生成范围外风险警告。")
     for warning in report.warnings:
+        vuln_label = format_vulnerability_label(warning.target_vulnerability)
         lines.extend([
-            f"### {warning.warning_id} {warning.target_vulnerability}",
+            f"### {warning.warning_id} {vuln_label}",
             "",
             f"- 目标位置：`{warning.contract_name}.{warning.function_signature}`",
             f"- 状态：`{translate_status(warning.status)}`",
@@ -91,6 +96,29 @@ def write_markdown(report: AuditReport, output_path: str | Path) -> Path:
 
 def report_to_dict(report: AuditReport) -> dict:
     return asdict(report)
+
+
+def format_vulnerability_label(vulnerability: str | None) -> str:
+    canonical = normalize_vulnerability(vulnerability)
+    name = translate_vulnerability(canonical)
+    if canonical in {"UNKNOWN", ""}:
+        return name
+    return f"{name} ({canonical})"
+
+
+def translate_vulnerability(vulnerability: str | None) -> str:
+    canonical = normalize_vulnerability(vulnerability)
+    mapping = {
+        "VULN_REENTRANCY": "重入漏洞",
+        "VULN_TIMESTAMP": "时间戳依赖",
+        "VULN_DELEGATECALL": "不安全 delegatecall",
+        "VULN_UNCHECKED_LOW_LEVEL_CALLS": "未检查低级调用返回值",
+        "VULN_CROSS_CONTRACT_RISK": "跨合约调用风险",
+        "VULN_UNKNOWN_ANOMALY": "行为异常",
+        "GENERAL_RISK": "综合高风险函数",
+        "UNKNOWN": "未知风险",
+    }
+    return mapping.get(canonical, str(vulnerability or "未知风险"))
 
 
 def translate_status(status: str) -> str:
