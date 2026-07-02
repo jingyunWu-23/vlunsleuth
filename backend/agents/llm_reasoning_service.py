@@ -31,6 +31,8 @@ class LLMReasoningService:
             result = self.client.complete_json(SYSTEM_PROMPT, payload)
         except NotImplementedError:
             result = build_not_configured_result(function, vector)
+        except Exception as exc:
+            result = build_llm_error_result(function, vector, exc)
         if not isinstance(result, dict):
             result = {"status": "inconclusive", "summary": str(result)}
         result.setdefault("status", "suspected")
@@ -128,6 +130,28 @@ def build_not_configured_result(function: FunctionUnit, vector: RiskVector) -> D
         },
         "repair_suggestion": {
             "strategy": "No model-generated repair suggestion because LLM API is not configured.",
+            "post_fix_checks": [],
+        },
+        "confidence_adjustment": 0.0,
+    }
+
+
+def build_llm_error_result(function: FunctionUnit, vector: RiskVector, exc: Exception) -> Dict[str, Any]:
+    return {
+        "status": "inconclusive",
+        "candidate_vulnerability": "LLM_API_ERROR",
+        "summary": (
+            f"{function.contract_name}.{function.name} passed the reasoning gate "
+            f"(R_func={vector.r_func}), but the large-model API call failed."
+        ),
+        "reasoning": [f"{type(exc).__name__}: {exc}"],
+        "verification_plan": {
+            "goal": "Retry large-model reasoning after fixing API connectivity or response format.",
+            "static_checks": [],
+            "dynamic_checks": [],
+        },
+        "repair_suggestion": {
+            "strategy": "No model-generated repair suggestion because the LLM API call failed.",
             "post_fix_checks": [],
         },
         "confidence_adjustment": 0.0,
