@@ -51,28 +51,8 @@ def render_markdown(report: AuditReport) -> str:
         ])
         if finding.recommendation:
             lines.append(f"- 修复建议：{finding.recommendation}")
-        if finding.reasoning:
-            lines.append(f"- 推理状态：`{translate_status(finding.reasoning.get('status', 'unknown'))}`")
-            reasoning_steps = finding.reasoning.get("reasoning", [])
-            if reasoning_steps:
-                lines.append("")
-                lines.append("推理过程：")
-                for step in reasoning_steps[:5]:
-                    lines.append(f"- {step}")
-        if finding.verification_plan:
-            goal = finding.verification_plan.get("goal")
-            if goal:
-                lines.append(f"- 验证目标：{goal}")
-            slither = finding.verification_plan.get("slither")
-            if slither:
-                lines.append(f"- Slither 验证：`{translate_verification_status(slither.get('status'))}`")
-                if slither.get("summary"):
-                    lines.append(f"- Slither 结论：{slither.get('summary')}")
-                matched = slither.get("matched_detectors") or []
-                if matched:
-                    checks = ", ".join(str(item.get("check")) for item in matched if item.get("check"))
-                    if checks:
-                        lines.append(f"- Slither 命中规则：`{checks}`")
+        append_reasoning(lines, finding)
+        append_verification(lines, finding)
         if finding.repair_suggestion:
             strategy = finding.repair_suggestion.get("strategy")
             if strategy:
@@ -95,6 +75,43 @@ def render_markdown(report: AuditReport) -> str:
             "",
         ])
     return "\n".join(lines)
+
+
+def append_reasoning(lines: list[str], finding) -> None:
+    if not finding.reasoning:
+        return
+    lines.append(f"- 推理状态：`{translate_status(finding.reasoning.get('status', 'unknown'))}`")
+    reasoning_steps = finding.reasoning.get("reasoning", [])
+    if reasoning_steps:
+        lines.append("")
+        lines.append("推理过程：")
+        for step in reasoning_steps[:5]:
+            lines.append(f"- {step}")
+
+
+def append_verification(lines: list[str], finding) -> None:
+    if not finding.verification_plan:
+        return
+    goal = finding.verification_plan.get("goal")
+    if goal:
+        lines.append(f"- 验证目标：{goal}")
+    slither = finding.verification_plan.get("slither")
+    if slither:
+        lines.append(f"- Slither 验证：`{translate_verification_status(slither.get('status'))}`")
+        if slither.get("summary"):
+            lines.append(f"- Slither 结论：{slither.get('summary')}")
+        matched = slither.get("matched_detectors") or []
+        if matched:
+            checks = ", ".join(str(item.get("check")) for item in matched if item.get("check"))
+            if checks:
+                lines.append(f"- Slither 命中规则：`{checks}`")
+    llm_verification = finding.verification_plan.get("llm_verification")
+    if llm_verification:
+        lines.append(f"- 验证智能体结论：`{translate_verification_status(llm_verification.get('status'))}`")
+        if llm_verification.get("summary"):
+            lines.append(f"- 验证解释：{llm_verification.get('summary')}")
+        if llm_verification.get("evidence_assessment"):
+            lines.append(f"- 证据评估：{llm_verification.get('evidence_assessment')}")
 
 
 def write_markdown(report: AuditReport, output_path: str | Path) -> Path:
@@ -150,6 +167,8 @@ def translate_status(status: str) -> str:
 def translate_verification_status(status: str | None) -> str:
     mapping = {
         "confirmed": "已确认",
+        "rejected": "已排除",
+        "inconclusive": "无法确定",
         "not_confirmed": "未确认",
         "completed": "已完成",
         "unavailable": "工具未安装",
