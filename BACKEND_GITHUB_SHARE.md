@@ -85,10 +85,15 @@ Useful endpoints:
 - `GET /api/v1/health`
 - `POST /api/v1/audits` for JSON requests using an existing local `source_path`
 - `POST /api/v1/audits/upload` for `.sol` or `.zip` uploads
-- `GET /api/v1/audits/{task_id}` for task status
+- `GET /api/v1/audits?status=running,queued&limit=50&offset=0` for paged task listing
+- `GET /api/v1/audits/{task_id}` for task status, progress, and action links
+- `GET /api/v1/audits/{task_id}/events` for status transition history
+- `POST /api/v1/audits/{task_id}/cancel` for best-effort cancellation
+- `POST /api/v1/audits/{task_id}/retry` to create a new task from a terminal task
+- `DELETE /api/v1/audits/{task_id}` to remove a terminal task and its report artifacts
 - `GET /api/v1/audits/{task_id}/report` for JSON report content
 - `GET /api/v1/audits/{task_id}/report.json` for JSON download
 - `GET /api/v1/audits/{task_id}/report.md` for Markdown download
 - `GET /api/v1/audits/{task_id}/artifacts` for generated artifact listing
 
-Uploaded files are stored under `backend_outputs/uploads/`; task status and reports are stored under `backend_outputs/api_tasks/`.
+Task records include `status`, `progress`, `events`, `can_cancel`, `can_retry`, and `can_delete` fields for the web UI. Uploaded files are stored under `backend_outputs/uploads/`; task status and reports are stored under `backend_outputs/api_tasks/`.
