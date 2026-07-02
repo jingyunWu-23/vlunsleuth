@@ -7,6 +7,14 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
 try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - optional local developer convenience.
+    load_dotenv = None
+
+if load_dotenv is not None:
+    load_dotenv()
+
+try:
     import psycopg
     from psycopg.rows import dict_row
     from psycopg.types.json import Jsonb

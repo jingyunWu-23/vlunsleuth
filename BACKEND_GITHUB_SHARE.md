@@ -72,10 +72,10 @@ For real opcode/embedding generation, keep `SCG_ENABLE_REAL_OPCODE` unset or set
 
 LLM API keys should stay outside Git. Put them in local environment variables such as `SCG_LLM_API_KEY`.
 
-Supabase/PostgreSQL is used for web persistence. Put the database connection string in `SCG_DATABASE_URL` or `SUPABASE_DB_URL`; the backend creates the required tables on startup.
+Supabase/PostgreSQL is used for web persistence. Put the database connection string in local `.env` as `SCG_DATABASE_URL` or `SUPABASE_DB_URL`; the backend loads `.env` automatically and creates the required tables on startup.
 
-```powershell
-$env:SCG_DATABASE_URL="postgresql://postgres:<password>@<host>:5432/postgres?sslmode=require"
+```env
+SCG_DATABASE_URL=postgresql://postgres:<password>@<host>:5432/postgres?sslmode=require
 ```
 
 ## Web API
