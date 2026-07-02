@@ -41,7 +41,7 @@ Thumbs.db
 /LG-DeepSVDD/result/contractward/features/
 /LG-DeepSVDD/**/__pycache__/
 
-# Local secrets
-.env
-.env.*
+# Shared environment template/config for the private team repository.
+!.env
 !.env.example
+.env.*
