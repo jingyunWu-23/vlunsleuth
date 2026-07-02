@@ -6,6 +6,8 @@ This project should share the backend service code plus the inference models it 
 
 - `backend/`
 - `requirements-backend.txt`
+- `package.json`
+- `package-lock.json`
 - `.gitignore`
 - `md/多模型智能合约漏洞检测系统与风险函数设计.md`
 - LSTM runtime assets:
@@ -26,6 +28,8 @@ This project should share the backend service code plus the inference models it 
   - `LG-DeepSVDD/pretrain/semantic features/LSTM/get_lstm_features.py`
 
 The backend DeepSVDD adapter derives its runtime 128-dimensional input from the same LSTM layer used by `get_lstm_features.py`: source sequence -> `lstm_scg_reentrancy_gen0.h5` layer `LSTM` -> 128 features -> DeepSVDD encoder.
+
+Real opcode/embedding compilation uses local solcjs packages through `backend/preprocessing/solcjs_multi_compile.js`. Run `npm install` after cloning so the backend can compile Solidity versions such as `0.4.25`, `^0.4.22`, and `0.8.x`.
 
 ## Exclude
 
@@ -63,5 +67,7 @@ Before running the backend with GCN enabled:
 ```powershell
 $env:SCG_GCN_PYTHON="C:\Users\20302\AppData\Local\conda\conda\envs\SWC\python.exe"
 ```
+
+For real opcode/embedding generation, keep `SCG_ENABLE_REAL_OPCODE` unset or set it to `1`. If you need to use an external compiler instead of the bundled solcjs wrapper, set `SCG_SOLC_PATH`.
 
 LLM API keys should stay outside Git. Put them in local environment variables such as `SCG_LLM_API_KEY`.

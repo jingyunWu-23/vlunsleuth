@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "solc": "^0.8.35",
+    "solc-0-4": "npm:solc@^0.4.26",
+    "solc-0-4-25": "npm:solc@^0.4.25",
+    "solc-0-8": "npm:solc@^0.8.21"
+  }
+}

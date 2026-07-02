@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import re
+import os
 from typing import Dict, List
 
+from backend.preprocessing.bytecode_embedding import attach_real_opcode_embeddings
 from backend.preprocessing.solidity_parser import mask_comments, parse_sources
 from backend.schemas import AnalysisInput, FunctionUnit, SourceFile
 
@@ -51,7 +53,7 @@ def build_analysis_input(task_id: str, sources: List[SourceFile], target_vulnera
     functions = [fn for contract in contracts for fn in contract.functions]
     for fn in functions:
         fn.features.update(extract_static_features(fn))
-    return AnalysisInput(
+    analysis = AnalysisInput(
         task_id=task_id,
         sources=sources,
         contracts=contracts,
@@ -59,6 +61,13 @@ def build_analysis_input(task_id: str, sources: List[SourceFile], target_vulnera
         call_graph=call_graph,
         target_vulnerability=target_vulnerability,
     )
+    if os.getenv("SCG_ENABLE_REAL_OPCODE", "1") != "0":
+        result = attach_real_opcode_embeddings(analysis)
+        for fn in functions:
+            fn.features.setdefault("real_opcode_status", result.status)
+            if result.warnings:
+                fn.features.setdefault("real_opcode_warnings", result.warnings[:5])
+    return analysis
 
 
 def extract_static_features(fn: FunctionUnit) -> Dict[str, object]:

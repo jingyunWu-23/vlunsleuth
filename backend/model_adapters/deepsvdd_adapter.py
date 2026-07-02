@@ -214,29 +214,41 @@ class DeepSVDDAdapter(DetectionModel):
             return {"tensorflow": f"unavailable: {type(exc).__name__}: {exc}"}
 
     def _extract_lstm_feature(self, fn: FunctionUnit, feature_model, tokenizer, shape: int) -> Tuple[np.ndarray, Dict[str, Any]]:
-        sequence_text = " ".join(fn.features.get("opcode_proxy_sequence", []) or fn.features.get("token_sequence", []))
-        if not sequence_text.strip():
-            sequence_text = fn.code
-        encoded = tokenizer.texts_to_sequences([sequence_text])
-
         try:
             import tensorflow as tf
         except ImportError:
             import keras as tf  # type: ignore
 
-        input_matrix = tf.keras.preprocessing.sequence.pad_sequences(encoded, maxlen=self.max_len)
+        real_embedding = fn.features.get("real_opcode_embedding")
+        if real_embedding:
+            input_matrix = tf.constant([real_embedding], dtype="int32")
+            sequence_token_count = len(fn.features.get("real_opcode_sequence", []))
+            method = "real_opcode_training_lstm_layer_feature"
+        else:
+            sequence_text = fn.features.get("real_opcode_text") or " ".join(
+                fn.features.get("opcode_proxy_sequence", []) or fn.features.get("token_sequence", [])
+            )
+            if not sequence_text.strip():
+                sequence_text = fn.code
+            encoded = tokenizer.texts_to_sequences([sequence_text])
+            input_matrix = tf.keras.preprocessing.sequence.pad_sequences(encoded, maxlen=self.max_len)
+            sequence_token_count = len(sequence_text.split())
+            method = "proxy_opcode_training_lstm_layer_feature"
+
         features = feature_model.predict(input_matrix, verbose=0)
         vector = np.asarray(features[0], dtype="float32").reshape(-1)
         if vector.shape[0] != shape:
             raise ValueError(f"Expected LSTM feature shape {shape}, got {vector.shape[0]}.")
 
         return vector, {
-            "method": "training_lstm_layer_feature",
+            "method": method,
             "input_shape": shape,
             "lstm_input_shape": list(input_matrix.shape),
             "lstm_output_shape": list(features.shape),
             "layer_name": self._meta.get("layer_name", "LSTM") if self._meta else "LSTM",
-            "sequence_token_count": len(sequence_text.split()),
+            "sequence_token_count": sequence_token_count,
+            "real_opcode_available": bool(real_embedding),
+            "real_opcode_status": fn.features.get("real_opcode_status"),
             "tokenizer_path": str(self.tokenizer_path),
             "lstm_model_path": str(self.lstm_model_path),
         }

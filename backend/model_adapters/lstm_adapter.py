@@ -209,8 +209,13 @@ class LSTMAdapter(DetectionModel):
 
     def _encode_function(self, fn: FunctionUnit):
         tf = self._load_tensorflow()
+        real_embedding = fn.features.get("real_opcode_embedding")
+        if real_embedding:
+            return tf.constant([real_embedding], dtype="int32")
         tokenizer = self._load_tokenizer()
-        sequence_text = " ".join(fn.features.get("opcode_proxy_sequence", []) or fn.features.get("token_sequence", []))
+        sequence_text = fn.features.get("real_opcode_text") or " ".join(
+            fn.features.get("opcode_proxy_sequence", []) or fn.features.get("token_sequence", [])
+        )
         sequence = tokenizer.texts_to_sequences([sequence_text])
         return tf.keras.preprocessing.sequence.pad_sequences(sequence, maxlen=self.max_len)
 
@@ -262,6 +267,9 @@ def compact_lstm_features(fn: FunctionUnit) -> Dict[str, object]:
         "dangerous_apis": features.get("dangerous_apis", []),
         "critical_statements": features.get("critical_statements", [])[:8],
         "token_count": features.get("token_count", 0),
+        "real_opcode_available": features.get("real_opcode_available", False),
+        "real_opcode_status": features.get("real_opcode_status"),
+        "real_opcode_sequence_sample": features.get("real_opcode_sequence", [])[:80],
         "opcode_proxy_sequence_sample": features.get("opcode_proxy_sequence", [])[:80],
         "static_score": features.get("static_score", 0.0),
         "business_score": features.get("business_score", 0.0),
