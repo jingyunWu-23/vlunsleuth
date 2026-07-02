@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import pickle
+import sys
 from hashlib import sha1
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -26,6 +28,9 @@ class DeepSVDDAdapter(DetectionModel):
         model_dir: str | None = None,
         model_stem: str | None = None,
         evidence_floor: float = 0.35,
+        lstm_model_path: str | None = None,
+        tokenizer_path: str | None = None,
+        max_len: int = 500,
     ) -> None:
         self.model_dir = Path(
             model_dir
@@ -36,8 +41,21 @@ class DeepSVDDAdapter(DetectionModel):
         self.encoder_path = Path(os.getenv("SCG_DEEPSVDD_ENCODER") or self.model_dir / f"{self.model_stem}_encoder.h5").resolve()
         self.meta_npz_path = Path(os.getenv("SCG_DEEPSVDD_META_NPZ") or self.model_dir / f"{self.model_stem}_meta.npz").resolve()
         self.meta_json_path = Path(os.getenv("SCG_DEEPSVDD_META_JSON") or self.model_dir / f"{self.model_stem}_meta.json").resolve()
+        self.lstm_model_path = Path(
+            lstm_model_path
+            or os.getenv("SCG_DEEPSVDD_LSTM_MODEL")
+            or default_lstm_model_path()
+        ).resolve()
+        self.tokenizer_path = Path(
+            tokenizer_path
+            or os.getenv("SCG_DEEPSVDD_TOKENIZER")
+            or default_tokenizer_path()
+        ).resolve()
+        self.max_len = int(os.getenv("SCG_DEEPSVDD_MAX_LEN", str(max_len)))
         self.evidence_floor = float(os.getenv("SCG_DEEPSVDD_EVIDENCE_FLOOR", str(evidence_floor)))
         self._encoder = None
+        self._feature_model = None
+        self._tokenizer = None
         self._meta: Dict[str, Any] | None = None
         self._runtime_error: str | None = None
 
@@ -52,6 +70,10 @@ class DeepSVDDAdapter(DetectionModel):
             "encoder_path": str(self.encoder_path),
             "meta_npz_path": str(self.meta_npz_path),
             "meta_json_path": str(self.meta_json_path),
+            "lstm_model_path": str(self.lstm_model_path),
+            "tokenizer_path": str(self.tokenizer_path),
+            "lstm_layer_name": meta.get("layer_name", "LSTM"),
+            "max_len": self.max_len,
             "input_shape": meta.get("shape"),
             "latent_dim": meta.get("latent_dim"),
             "threshold": meta.get("threshold"),
@@ -64,14 +86,14 @@ class DeepSVDDAdapter(DetectionModel):
 
     def analyze(self, analysis: AnalysisInput) -> List[ModelEvidence]:
         try:
-            encoder, meta = self._load_runtime()
+            encoder, feature_model, tokenizer, meta = self._load_runtime()
         except Exception as exc:
             self._runtime_error = f"{type(exc).__name__}: {exc}"
             return self._static_proxy(analysis, adapter_mode="static_proxy_after_deepsvdd_load_error")
 
         evidences: List[ModelEvidence] = []
         for fn in analysis.functions:
-            vector, vector_meta = self._vectorize_function(fn, int(meta["shape"]))
+            vector, vector_meta = self._extract_lstm_feature(fn, feature_model, tokenizer, int(meta["shape"]))
             latent = encoder.predict(vector.reshape(1, -1), verbose=0)
             raw_score = float(np.sum((latent[0] - meta["c"]) ** 2))
             threshold = float(meta["threshold"])
@@ -106,6 +128,8 @@ class DeepSVDDAdapter(DetectionModel):
                     "model_vulnerability": meta.get("vul_type", "reentrancy"),
                     "encoder_path": str(self.encoder_path),
                     "meta_npz_path": str(self.meta_npz_path),
+                    "lstm_model_path": str(self.lstm_model_path),
+                    "tokenizer_path": str(self.tokenizer_path),
                     "threshold_percentile": meta.get("threshold_percentile"),
                     "nu": meta.get("nu"),
                     "regul": meta.get("regul"),
@@ -114,18 +138,22 @@ class DeepSVDDAdapter(DetectionModel):
             ))
         return evidences
 
-    def _load_runtime(self) -> Tuple[Any, Dict[str, Any]]:
-        if self._encoder is not None and self._meta is not None:
-            return self._encoder, self._meta
+    def _load_runtime(self) -> Tuple[Any, Any, Any, Dict[str, Any]]:
+        if self._encoder is not None and self._feature_model is not None and self._tokenizer is not None and self._meta is not None:
+            return self._encoder, self._feature_model, self._tokenizer, self._meta
         if not self.encoder_path.exists():
             raise FileNotFoundError(f"DeepSVDD encoder not found: {self.encoder_path}")
         if not self.meta_npz_path.exists():
             raise FileNotFoundError(f"DeepSVDD meta npz not found: {self.meta_npz_path}")
+        if not self.lstm_model_path.exists():
+            raise FileNotFoundError(f"DeepSVDD LSTM feature model not found: {self.lstm_model_path}")
+        if not self.tokenizer_path.exists():
+            raise FileNotFoundError(f"DeepSVDD tokenizer not found: {self.tokenizer_path}")
 
         try:
-            from tensorflow.keras.models import load_model
+            import tensorflow as tf
         except ImportError:
-            from keras.models import load_model  # type: ignore
+            import keras as tf  # type: ignore
 
         npz = np.load(self.meta_npz_path, allow_pickle=True)
         meta_json = self._load_meta_json()
@@ -140,9 +168,16 @@ class DeepSVDDAdapter(DetectionModel):
             "nu": float(npz["nu"]),
             "regul": float(npz["regul"]),
         }
-        self._encoder = load_model(self.encoder_path, compile=False)
+        self._encoder = tf.keras.models.load_model(self.encoder_path, compile=False)
+        lstm_model = tf.keras.models.load_model(self.lstm_model_path, compile=False)
+        layer_name = self._meta.get("layer_name", "LSTM")
+        self._feature_model = tf.keras.Model(
+            inputs=lstm_model.input,
+            outputs=lstm_model.get_layer(str(layer_name)).output,
+        )
+        self._tokenizer = self._load_tokenizer()
         self._runtime_error = None
-        return self._encoder, self._meta
+        return self._encoder, self._feature_model, self._tokenizer, self._meta
 
     def _load_meta_only(self) -> Dict[str, Any]:
         meta = self._load_meta_json()
@@ -178,40 +213,72 @@ class DeepSVDDAdapter(DetectionModel):
         except Exception as exc:
             return {"tensorflow": f"unavailable: {type(exc).__name__}: {exc}"}
 
-    def _vectorize_function(self, fn: FunctionUnit, shape: int) -> Tuple[np.ndarray, Dict[str, Any]]:
-        sequence = list(fn.features.get("opcode_proxy_sequence") or fn.features.get("token_sequence") or [])
-        if not sequence:
-            sequence = fn.code.split()
-        values = np.zeros(shape, dtype="float32")
-        for index, token in enumerate(sequence[:shape]):
-            values[index] = _token_to_unit_float(str(token))
+    def _extract_lstm_feature(self, fn: FunctionUnit, feature_model, tokenizer, shape: int) -> Tuple[np.ndarray, Dict[str, Any]]:
+        sequence_text = " ".join(fn.features.get("opcode_proxy_sequence", []) or fn.features.get("token_sequence", []))
+        if not sequence_text.strip():
+            sequence_text = fn.code
+        encoded = tokenizer.texts_to_sequences([sequence_text])
 
-        numeric_tail = [
-            float(fn.features.get("static_score", 0.0)),
-            float(fn.features.get("business_score", 0.0)),
-            float(fn.features.get("protection_score", 0.0)),
-            min(1.0, len(fn.features.get("dangerous_apis", [])) / 6.0),
-            min(1.0, float(fn.features.get("token_count", 0.0)) / 1000.0),
-            min(1.0, float(fn.features.get("line_span", 1.0)) / 200.0),
-        ]
-        for offset, value in enumerate(reversed(numeric_tail), 1):
-            if offset <= shape:
-                values[-offset] = float(max(0.0, min(1.0, value)))
+        try:
+            import tensorflow as tf
+        except ImportError:
+            import keras as tf  # type: ignore
 
-        return values, {
-            "method": "opcode_proxy_hash_vector",
+        input_matrix = tf.keras.preprocessing.sequence.pad_sequences(encoded, maxlen=self.max_len)
+        features = feature_model.predict(input_matrix, verbose=0)
+        vector = np.asarray(features[0], dtype="float32").reshape(-1)
+        if vector.shape[0] != shape:
+            raise ValueError(f"Expected LSTM feature shape {shape}, got {vector.shape[0]}.")
+
+        return vector, {
+            "method": "training_lstm_layer_feature",
             "input_shape": shape,
-            "sequence_length": len(sequence),
-            "used_sequence_length": min(len(sequence), shape),
-            "numeric_tail": {
-                "static_score": numeric_tail[0],
-                "business_score": numeric_tail[1],
-                "protection_score": numeric_tail[2],
-                "dangerous_api_density": numeric_tail[3],
-                "token_density": numeric_tail[4],
-                "line_span_density": numeric_tail[5],
-            },
+            "lstm_input_shape": list(input_matrix.shape),
+            "lstm_output_shape": list(features.shape),
+            "layer_name": self._meta.get("layer_name", "LSTM") if self._meta else "LSTM",
+            "sequence_token_count": len(sequence_text.split()),
+            "tokenizer_path": str(self.tokenizer_path),
+            "lstm_model_path": str(self.lstm_model_path),
         }
+
+    def _load_tokenizer(self):
+        if self._tokenizer is not None:
+            return self._tokenizer
+        self._install_keras_preprocessing_alias()
+        with self.tokenizer_path.open("rb") as handle:
+            tokenizer = pickle.load(handle)
+        self._normalize_tokenizer(tokenizer)
+        return tokenizer
+
+    def _normalize_tokenizer(self, tokenizer) -> None:
+        defaults = {
+            "analyzer": None,
+            "filters": '!"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n',
+            "lower": True,
+            "split": " ",
+            "char_level": False,
+            "oov_token": None,
+        }
+        for key, value in defaults.items():
+            if not hasattr(tokenizer, key):
+                setattr(tokenizer, key, value)
+
+    def _install_keras_preprocessing_alias(self) -> None:
+        if "keras_preprocessing.text" in sys.modules:
+            return
+        try:
+            import tensorflow.keras.preprocessing.text as text_module  # type: ignore
+            import tensorflow.keras.preprocessing.sequence as sequence_module  # type: ignore
+        except Exception:
+            return
+        import types
+
+        package = types.ModuleType("keras_preprocessing")
+        package.text = text_module
+        package.sequence = sequence_module
+        sys.modules.setdefault("keras_preprocessing", package)
+        sys.modules.setdefault("keras_preprocessing.text", text_module)
+        sys.modules.setdefault("keras_preprocessing.sequence", sequence_module)
 
     def _calibrate(self, score: float, threshold: float) -> float:
         if threshold <= 0:
@@ -256,10 +323,12 @@ class DeepSVDDAdapter(DetectionModel):
         return round(max(0.0, min(1.0, score)), 4)
 
 
-def _token_to_unit_float(token: str) -> float:
-    digest = sha1(token.encode("utf-8", errors="ignore")).digest()
-    value = int.from_bytes(digest[:4], byteorder="big", signed=False)
-    return value / 0xFFFFFFFF
+def default_lstm_model_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "LG-DeepSVDD" / "pretrain" / "semantic features" / "LSTM" / "outputs" / "lstm_scg_reentrancy_gen0.h5"
+
+
+def default_tokenizer_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "LG-DeepSVDD" / "pretrain" / "semantic features" / "LSTM" / "tok.pickle"
 
 
 def _stable_hash(value: str) -> str:

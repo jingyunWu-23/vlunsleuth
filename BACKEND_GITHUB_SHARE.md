@@ -21,6 +21,11 @@ This project should share the backend service code plus the inference models it 
   - `cross-contract_detection/cross-contract_detection/detecting/Utils/python-solidity-parser-master/`
 - DeepSVDD assets when the real DeepSVDD adapter is connected:
   - `LG-DeepSVDD/DeepSVDD/outputs/models/*.h5`
+  - `LG-DeepSVDD/DeepSVDD/outputs/models/*_meta.npz`
+  - `LG-DeepSVDD/DeepSVDD/outputs/models/*_meta.json`
+  - `LG-DeepSVDD/pretrain/semantic features/LSTM/get_lstm_features.py`
+
+The backend DeepSVDD adapter derives its runtime 128-dimensional input from the same LSTM layer used by `get_lstm_features.py`: source sequence -> `lstm_scg_reentrancy_gen0.h5` layer `LSTM` -> 128 features -> DeepSVDD encoder.
 
 ## Exclude
 
