@@ -8,10 +8,12 @@ from backend.rag.knowledge_context import KnowledgeContext
 from backend.schemas import FunctionUnit, ModelEvidence, RiskVector
 
 
-SYSTEM_PROMPT = """You are a smart-contract security reasoning agent.
-Return strict JSON only. Do not change upstream model scores.
-You may output suspected risks, localization, verification plans, and repair suggestions.
-Do not mark a vulnerability as verified without external tool evidence."""
+SYSTEM_PROMPT = """你是智能合约安全推理智能体。
+只返回严格 JSON，不要输出 Markdown。
+所有自然语言字段必须使用简体中文。
+不得修改上游模型分数。
+你可以输出疑似风险、代码定位、验证计划和修复建议。
+没有外部工具证据时，不得把漏洞标记为已验证。"""
 
 
 class LLMReasoningService:
@@ -36,7 +38,7 @@ class LLMReasoningService:
         if not isinstance(result, dict):
             result = {"status": "inconclusive", "summary": str(result)}
         result.setdefault("status", "suspected")
-        result.setdefault("summary", f"{function.contract_name}.{function.name} selected for reasoning.")
+        result.setdefault("summary", f"{function.contract_name}.{function.name} 已进入大模型推理流程。")
         result.setdefault("verification_plan", {})
         result.setdefault("repair_suggestion", {})
         return result
@@ -84,11 +86,11 @@ def build_reasoning_payload(
         "output_schema": {
             "status": "suspected | rejected | inconclusive",
             "candidate_vulnerability": "string",
-            "summary": "string",
-            "reasoning": ["string"],
-            "location": [{"line": "number", "code": "string", "reason": "string"}],
-            "verification_plan": {"goal": "string", "static_checks": ["string"], "dynamic_checks": ["string"]},
-            "repair_suggestion": {"strategy": "string", "patch_pattern": "string", "post_fix_checks": ["string"]},
+            "summary": "简体中文字符串",
+            "reasoning": ["简体中文字符串"],
+            "location": [{"line": "number", "code": "string", "reason": "简体中文字符串"}],
+            "verification_plan": {"goal": "简体中文字符串", "static_checks": ["简体中文字符串"], "dynamic_checks": ["简体中文字符串"]},
+            "repair_suggestion": {"strategy": "简体中文字符串", "patch_pattern": "简体中文字符串", "post_fix_checks": ["简体中文字符串"]},
             "confidence_adjustment": "number between -0.2 and 0.2",
         },
     }
@@ -119,17 +121,17 @@ def build_not_configured_result(function: FunctionUnit, vector: RiskVector) -> D
         "status": "inconclusive",
         "candidate_vulnerability": "MODEL_API_NOT_CONFIGURED",
         "summary": (
-            f"{function.contract_name}.{function.name} passed the reasoning gate "
-            f"(R_func={vector.r_func}), but the large-model API hook is not configured."
+            f"{function.contract_name}.{function.name} 已通过推理门控 "
+            f"(R_func={vector.r_func})，但当前尚未配置可用的大模型 API。"
         ),
-        "reasoning": ["Fill OpenAICompatibleLLMClient.complete_json() to enable real model reasoning."],
+        "reasoning": ["需要配置并启用 OpenAI-compatible 大模型接口后，才能生成真实推理结果。"],
         "verification_plan": {
-            "goal": "Configure LLM API, then generate a vulnerability-specific verification plan.",
+            "goal": "配置大模型 API 后，重新生成针对该风险的验证计划。",
             "static_checks": [],
             "dynamic_checks": [],
         },
         "repair_suggestion": {
-            "strategy": "No model-generated repair suggestion because LLM API is not configured.",
+            "strategy": "由于大模型 API 未配置，当前不生成模型修复建议。",
             "post_fix_checks": [],
         },
         "confidence_adjustment": 0.0,
@@ -141,17 +143,17 @@ def build_llm_error_result(function: FunctionUnit, vector: RiskVector, exc: Exce
         "status": "inconclusive",
         "candidate_vulnerability": "LLM_API_ERROR",
         "summary": (
-            f"{function.contract_name}.{function.name} passed the reasoning gate "
-            f"(R_func={vector.r_func}), but the large-model API call failed."
+            f"{function.contract_name}.{function.name} 已通过推理门控 "
+            f"(R_func={vector.r_func})，但大模型 API 调用失败。"
         ),
         "reasoning": [f"{type(exc).__name__}: {exc}"],
         "verification_plan": {
-            "goal": "Retry large-model reasoning after fixing API connectivity or response format.",
+            "goal": "修复大模型网络连接或响应格式问题后，重新执行推理。",
             "static_checks": [],
             "dynamic_checks": [],
         },
         "repair_suggestion": {
-            "strategy": "No model-generated repair suggestion because the LLM API call failed.",
+            "strategy": "由于大模型调用失败，当前不生成模型修复建议。",
             "post_fix_checks": [],
         },
         "confidence_adjustment": 0.0,

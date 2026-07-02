@@ -66,7 +66,10 @@ def build_findings_and_warnings(
                     vulnerability_id=vulnerability_id,
                     severity=severity_from_score(max(evidence.calibrated_confidence, vector.r_func)),
                     confidence=max(evidence.calibrated_confidence, vector.r_func),
-                    summary=reasoning.get("summary") or f"{fn.contract_name}.{fn.name} has {vulnerability_id} evidence from {evidence.model_id}.",
+                    summary=reasoning.get("summary") or (
+                        f"{fn.contract_name}.{fn.name} 存在来自 {evidence.model_id} 的 "
+                        f"{vulnerability_id} 风险证据。"
+                    ),
                     evidence=[evidence],
                     knowledge=knowledge,
                     location=reasoning.get("location") or evidence.location_candidates,
@@ -87,7 +90,7 @@ def build_findings_and_warnings(
                 function_signature=fn.signature,
                 target_vulnerability="GENERAL_RISK",
                 score=vector.r_func,
-                summary=f"{fn.contract_name}.{fn.name} is high in general risk ranking.",
+                summary=f"{fn.contract_name}.{fn.name} 在全局函数风险排序中处于较高风险位置。",
                 recommended_action={"action": "review_high_risk_function", "target_vulnerability": "GENERAL_RISK"},
             ))
     return findings, warnings
@@ -102,7 +105,7 @@ def make_warning(vector: RiskVector, evidence: ModelEvidence) -> Warning:
         function_signature=evidence.function_signature,
         target_vulnerability=evidence.vulnerability_id or "UNKNOWN",
         score=max(vector.r_func, evidence.calibrated_confidence),
-        summary=f"Out-of-scope risk candidate detected by {evidence.model_id}.",
+        summary=f"{evidence.model_id} 检测到范围外风险候选项，建议发起对应专项检测。",
         recommended_action={
             "action": "start_new_scan",
             "target_vulnerability": evidence.vulnerability_id or "UNKNOWN",

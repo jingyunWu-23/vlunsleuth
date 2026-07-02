@@ -48,22 +48,22 @@ class PlaceholderLLMClient:
             "candidate_vulnerability": top_vulnerability,
             "summary": (
                 f"{target.get('contract_name', 'unknown')}.{target.get('function_name', 'unknown')} "
-                f"is selected for reasoning with R_func={risk.get('r_func', 0)}."
+                f"已进入推理流程，函数综合风险分 R_func={risk.get('r_func', 0)}。"
             ),
             "reasoning": [
-                "This is placeholder reasoning generated without an external LLM API.",
-                "Model, static, and knowledge evidence should be reviewed together before verification.",
+                "当前使用占位推理结果，未调用外部大模型 API。",
+                "在进入验证流程前，应结合模型证据、静态特征和知识库证据进行人工复核。",
             ],
             "location": target.get("critical_statements", [])[:5],
             "verification_plan": {
-                "goal": "Confirm whether the suspected risk is reachable and exploitable.",
-                "static_checks": ["Review guards, external calls, state updates, and function reachability."],
-                "dynamic_checks": ["Create a focused test or PoC for the reported path."],
+                "goal": "确认该疑似风险是否可达、是否具备可利用条件。",
+                "static_checks": ["复核访问控制、外部调用、状态更新顺序和函数可达性。"],
+                "dynamic_checks": ["为报告路径构造定向测试或 PoC。"],
             },
             "repair_suggestion": {
                 "strategy": first_repair_strategy(knowledge, top_vulnerability),
-                "side_effects": ["Manual review is required before applying any generated patch."],
-                "post_fix_checks": ["Re-run the audit and targeted regression tests."],
+                "side_effects": ["应用任何自动生成补丁前都需要人工复核。"],
+                "post_fix_checks": ["重新执行审计，并运行针对性回归测试。"],
             },
             "confidence_adjustment": 0.0,
         }
@@ -94,7 +94,7 @@ class OpenAICompatibleLLMClient:
                 {
                     "role": "user",
                     "content": (
-                        "Return strict JSON matching output_schema. Do not wrap it in Markdown.\n\n"
+                        "请返回符合 output_schema 的严格 JSON。不要使用 Markdown 包裹。所有自然语言内容必须使用简体中文。\n\n"
                         + json.dumps(user_payload, ensure_ascii=False)
                     ),
                 },
@@ -154,12 +154,12 @@ def first_vulnerability(evidence: list) -> str:
 
 def first_repair_strategy(knowledge_context: Dict[str, Any], vulnerability: str = "") -> str:
     defaults = {
-        "VULN_REENTRANCY": "Apply checks-effects-interactions, consider nonReentrant, and verify state is updated before external interaction.",
-        "VULN_TIMESTAMP": "Avoid using block.timestamp as a critical decision source; use safer time windows or trusted oracle logic where appropriate.",
-        "VULN_DELEGATECALL": "Avoid delegatecall to untrusted targets and restrict upgrade or plugin targets through strict access control and allowlists.",
-        "VULN_UNCHECKED_LOW_LEVEL_CALLS": "Check low-level call return values and fail closed with require(success).",
-        "VULN_CROSS_CONTRACT_RISK": "Review cross-contract trust boundaries, target controllability, and call-chain state dependencies.",
-        "VULN_UNKNOWN_ANOMALY": "Manually review anomalous code paths and add targeted regression tests around risky control and asset flows.",
+        "VULN_REENTRANCY": "采用 checks-effects-interactions 模式，必要时加入 nonReentrant，并确保外部调用前已经完成关键状态更新。",
+        "VULN_TIMESTAMP": "避免将 block.timestamp 作为关键决策来源；如确需时间条件，应使用更安全的时间窗口或可信预言机。",
+        "VULN_DELEGATECALL": "避免对不可信目标执行 delegatecall，并通过严格访问控制和白名单限制升级或插件目标。",
+        "VULN_UNCHECKED_LOW_LEVEL_CALLS": "检查低级调用返回值，并使用 require(success) 失败即回滚。",
+        "VULN_CROSS_CONTRACT_RISK": "复核跨合约信任边界、目标地址可控性和调用链状态依赖。",
+        "VULN_UNKNOWN_ANOMALY": "人工复核异常代码路径，并围绕高风险控制流和资产流添加针对性回归测试。",
     }
     if vulnerability in defaults:
         return defaults[vulnerability]
@@ -170,7 +170,7 @@ def first_repair_strategy(knowledge_context: Dict[str, Any], vulnerability: str 
                 return str(content["repair_strategy"])
             if content.get("recommendation"):
                 return str(content["recommendation"])
-    return "Apply the corresponding secure coding pattern and verify behavior with targeted tests."
+    return "采用对应的安全编码模式，并通过针对性测试验证修复后的行为。"
 
 
 def dumps_payload(payload: Dict[str, Any]) -> str:
