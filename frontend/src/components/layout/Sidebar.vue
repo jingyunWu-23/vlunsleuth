@@ -2,51 +2,12 @@
 import { ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuditStore } from '@/stores/audit'
-import type { Severity } from '@/types'
 
 const router = useRouter()
 const route = useRoute()
 const auditStore = useAuditStore()
 
 const isCollapsed = ref(false)
-
-// Mock file tree data — in production this comes from the audit report
-interface FileTreeNode {
-  name: string
-  type: 'file' | 'folder'
-  children?: FileTreeNode[]
-  riskLevel?: Severity | 'none'
-  expanded?: boolean
-}
-
-const fileTree = ref<FileTreeNode[]>([
-  {
-    name: 'contracts',
-    type: 'folder',
-    expanded: true,
-    children: [
-      {
-        name: 'Vault.sol',
-        type: 'file',
-        expanded: true,
-        children: [
-          { name: 'constructor()', type: 'file', riskLevel: 'none' },
-          { name: 'deposit()', type: 'file', riskLevel: 'high' },
-          { name: 'withdraw(uint256)', type: 'file', riskLevel: 'high' },
-        ],
-      },
-      {
-        name: 'Lending.sol',
-        type: 'file',
-        expanded: false,
-        children: [
-          { name: 'liquidate(address)', type: 'file', riskLevel: 'none' },
-          { name: 'borrow(uint256)', type: 'file', riskLevel: 'medium' },
-        ],
-      },
-    ],
-  },
-])
 
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
@@ -58,23 +19,6 @@ function navigateTo(path: string) {
 
 function isActive(path: string) {
   return route.path === path
-}
-
-function riskColor(level: Severity | 'none'): string {
-  switch (level) {
-    case 'high':
-      return 'bg-red-500'
-    case 'medium':
-      return 'bg-orange-500'
-    case 'low':
-      return 'bg-yellow-500'
-    default:
-      return 'bg-gray-600'
-  }
-}
-
-function toggleFolder(node: FileTreeNode) {
-  node.expanded = !(node.expanded ?? false)
 }
 
 const confirmedCount = auditStore.confirmedFindings?.length ?? 0
@@ -93,7 +37,7 @@ const confirmedCount = auditStore.confirmedFindings?.length ?? 0
             d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
         </svg>
       </div>
-      <span v-if="!isCollapsed" class="text-white font-bold text-sm whitespace-nowrap">SmartAudit AI</span>
+      <span v-if="!isCollapsed" class="text-white font-bold text-sm whitespace-nowrap">VulnSleuth</span>
     </div>
 
     <!-- New Task Button -->
@@ -134,7 +78,7 @@ const confirmedCount = auditStore.confirmedFindings?.length ?? 0
           { icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7', label: '跨合约调用图', path: '/cross-contract' },
           { icon: 'M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12', label: '函数风险排名', path: '/risk-ranking' },
           { icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6', label: '修复建议', path: '/repair' },
-          { icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', label: '报告', path: '/report' },
+          { icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', label: '报告', path: auditStore.currentTask?.task_id ? `/report/${auditStore.currentTask.task_id}` : '/report' },
           { icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', label: '历史任务', path: '/tasks' },
         ]"
         :key="item.label"
@@ -159,68 +103,6 @@ const confirmedCount = auditStore.confirmedFindings?.length ?? 0
         </span>
       </button>
     </nav>
-
-    <!-- File Tree -->
-    <div v-if="!isCollapsed" class="border-t border-[#21262d] overflow-y-auto max-h-64 shrink-0">
-      <div class="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">合约文件</div>
-      <template v-for="node in fileTree" :key="node.name">
-        <div
-          v-if="node.type === 'folder'"
-          class="cursor-pointer"
-          @click="toggleFolder(node)"
-        >
-          <div class="flex items-center gap-2 px-4 py-1.5 text-sm text-gray-400 hover:text-gray-200 hover:bg-[#1c2128]">
-            <svg
-              class="w-4 h-4 shrink-0 transition-transform"
-              :class="{ 'rotate-90': node.expanded }"
-              fill="none" viewBox="0 0 24 24" stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-            </svg>
-            <svg class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-            </svg>
-            <span class="truncate text-xs">{{ node.name }}</span>
-          </div>
-          <template v-if="node.expanded && node.children">
-            <div
-              v-for="child in node.children"
-              :key="child.name"
-              class="flex items-center gap-2 pl-10 pr-4 py-1.5 text-xs cursor-pointer hover:bg-[#1c2128]"
-              :class="child.children ? 'text-gray-400' : 'text-gray-500'"
-              @click="child.children && toggleFolder(child)"
-            >
-              <svg v-if="child.children" class="w-3 h-3 shrink-0 transition-transform" :class="{ 'rotate-90': child.expanded }" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-              </svg>
-              <svg v-if="!child.children" class="w-3 h-3 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5z" />
-              </svg>
-              <span class="truncate flex-1">{{ child.name }}</span>
-              <span
-                v-if="child.riskLevel && child.riskLevel !== 'none'"
-                class="w-1.5 h-1.5 rounded-full shrink-0"
-                :class="riskColor(child.riskLevel || 'none')"
-              />
-              <!-- nested functions under file -->
-              <template v-if="child.expanded && child.children">
-                <div v-for="func in child.children" :key="func.name"
-                  class="flex items-center gap-2 pl-16 pr-4 py-1 text-xs text-gray-500 hover:text-gray-300">
-                  <svg class="w-3 h-3 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                  </svg>
-                  <span class="truncate">{{ func.name }}</span>
-                  <span v-if="func.riskLevel && func.riskLevel !== 'none'"
-                    class="w-1.5 h-1.5 rounded-full shrink-0"
-                    :class="riskColor(func.riskLevel || 'none')"
-                  />
-                </div>
-              </template>
-            </div>
-          </template>
-        </div>
-      </template>
-    </div>
 
     <!-- Collapse Toggle -->
     <div class="border-t border-[#21262d] shrink-0">

@@ -38,7 +38,7 @@ const statusLabels: Record<string, string> = {
   <div class="p-6 max-w-6xl mx-auto">
     <!-- Welcome section -->
     <div class="mb-8">
-      <h1 class="text-2xl font-bold text-white mb-2">SmartAudit AI 安全审计平台</h1>
+      <h1 class="text-2xl font-bold text-white mb-2">VulnSleuth：检索增强与多智能体协同的合约漏洞定位与修复平台</h1>
       <p class="text-gray-400 text-sm">基于多模型联合推理的智能合约漏洞检测系统 — LSTM + GCN + DeepSVDD + RAG + LLM</p>
     </div>
 
@@ -140,10 +140,20 @@ const statusLabels: Record<string, string> = {
 
           <div class="text-right shrink-0">
             <div class="text-xs text-gray-400 mb-1">{{ formatDate(task.created_at) }}</div>
-            <div v-if="task.status === 'running'" class="w-24">
-              <div class="h-1.5 bg-[#0d1117] rounded-full overflow-hidden">
-                <div class="h-full bg-blue-500 rounded-full transition-all" :style="{ width: `${task.progress}%` }" />
+            <div v-if="task.status === 'running' || task.status === 'queued'" class="flex items-center gap-2">
+              <div v-if="task.status === 'running'" class="w-20">
+                <div class="h-1.5 bg-[#0d1117] rounded-full overflow-hidden">
+                  <div class="h-full bg-blue-500 rounded-full transition-all" :style="{ width: `${task.progress}%` }" />
+                </div>
               </div>
+              <button
+                v-if="task.can_cancel"
+                @click.stop="auditStore.cancelTask(task.task_id)"
+                :disabled="auditStore.cancelling"
+                class="px-2.5 py-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-red-500/20 rounded transition-colors disabled:opacity-50"
+              >
+                取消
+              </button>
             </div>
             <div v-else-if="task.status === 'succeeded'" class="text-xs text-green-400">查看详情 →</div>
           </div>

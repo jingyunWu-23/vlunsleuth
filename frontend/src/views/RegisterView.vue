@@ -58,7 +58,7 @@ async function handleSubmit() {
           </svg>
         </div>
         <h1 class="text-2xl font-bold text-white">创建账号</h1>
-        <p class="text-gray-400 mt-2 text-sm">注册 SmartAudit AI 平台</p>
+        <p class="text-gray-400 mt-2 text-sm">注册 VulnSleuth 平台</p>
       </div>
 
       <div class="bg-[#161b22] border border-[#30363d] rounded-xl p-6">

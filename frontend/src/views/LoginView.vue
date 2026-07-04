@@ -39,8 +39,8 @@ async function handleSubmit() {
               d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
         </div>
-        <h1 class="text-2xl font-bold text-white">SmartAudit AI</h1>
-        <p class="text-gray-400 mt-2 text-sm">智能合约安全审计平台</p>
+        <h1 class="text-2xl font-bold text-white">VulnSleuth</h1>
+        <p class="text-gray-400 mt-2 text-sm">检索增强与多智能体协同的合约漏洞定位与修复平台</p>
       </div>
 
       <!-- Login Form -->

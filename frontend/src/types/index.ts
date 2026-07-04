@@ -218,6 +218,7 @@ export interface Warning {
 export interface RepairSuggestion {
   strategy?: string
   patch_pattern?: string
+  original_snippet?: string
   post_fix_checks?: string[]
 }
 
@@ -268,6 +269,31 @@ export interface HealthResponse {
   workers: number
   tasks: Record<string, number>
   database: string
+}
+
+// ============= Call Graph =============
+export interface CallGraphNode {
+  id: string
+  name: string
+  category: 'contract' | 'function'
+  contractName: string
+  riskLevel: Severity | 'none'
+  symbolSize: number
+  crossContractFindings: number
+  rFunc?: number
+}
+
+export interface CallGraphEdge {
+  source: string
+  target: string
+  callType: 'internal' | 'external'
+  methodName?: string
+  riskFlag: boolean
+}
+
+export interface CallGraphData {
+  nodes: CallGraphNode[]
+  edges: CallGraphEdge[]
 }
 
 // ============= Monaco Marker =============

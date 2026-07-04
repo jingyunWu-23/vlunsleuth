@@ -125,6 +125,27 @@ export const useAuditStore = defineStore('audit', () => {
     }
   }
 
+  const cancelling = ref(false)
+
+  async function cancelTask(taskId: string) {
+    cancelling.value = true
+    error.value = null
+    try {
+      await auditsApi.cancel(taskId)
+      if (currentTask.value?.task_id === taskId) {
+        currentTask.value = { ...currentTask.value, status: 'cancelling' as const, can_cancel: false }
+      }
+      // Refresh task list if loaded
+      if (tasks.value.length) {
+        await fetchTasks()
+      }
+    } catch (e: unknown) {
+      error.value = e instanceof Error ? e.message : '取消任务失败'
+    } finally {
+      cancelling.value = false
+    }
+  }
+
   function selectFinding(finding: Finding | null) {
     selectedFinding.value = finding
   }
@@ -173,6 +194,8 @@ export const useAuditStore = defineStore('audit', () => {
     otherWarnings,
     selectedFinding,
     selectedRiskVector,
+    cancelling,
+    cancelTask,
     fetchTasks,
     fetchTask,
     createTask,

@@ -3,20 +3,15 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuditStore } from '@/stores/audit'
 import TopCards from '@/components/dashboard/TopCards.vue'
-import CodeEditor from '@/components/editor/CodeEditor.vue'
-import FindingDetailPanel from '@/components/panels/FindingDetailPanel.vue'
 import TimelinePanel from '@/components/analytics/TimelinePanel.vue'
 import RiskRankingTable from '@/components/analytics/RiskRankingTable.vue'
-import RadarChart from '@/components/analytics/RadarChart.vue'
 import RiskWarningList from '@/components/analytics/RiskWarningList.vue'
-import type { Finding } from '@/types'
 
 const route = useRoute()
 const auditStore = useAuditStore()
 const taskId = route.params.taskId as string
 
-const activeBottomTab = ref<'timeline' | 'ranking' | 'radar' | 'warnings'>('ranking')
-const selectedFinding = ref<Finding | null>(null)
+const activeBottomTab = ref<'timeline' | 'ranking' | 'warnings'>('ranking')
 
 onMounted(async () => {
   await auditStore.fetchTask(taskId)
@@ -35,14 +30,9 @@ onUnmounted(() => {
   auditStore.stopPolling()
 })
 
-function handleFindingSelect(finding: Finding) {
-  selectedFinding.value = finding
-}
-
-const bottomTabs = [
+const bottomTabs =[
   { key: 'timeline' as const, label: '执行流程' },
   { key: 'ranking' as const, label: '函数风险排名 TOP 10' },
-  { key: 'radar' as const, label: '风险分数组成' },
   { key: 'warnings' as const, label: '其他潜在风险' },
 ]
 </script>
@@ -69,6 +59,14 @@ const bottomTabs = [
         <div class="w-48 h-2 bg-[#161b22] rounded-full overflow-hidden mt-2 mx-auto">
           <div class="h-full bg-blue-500 rounded-full transition-all duration-500" :style="{ width: `${auditStore.currentTask?.progress ?? 0}%` }" />
         </div>
+        <button
+          v-if="auditStore.currentTask?.can_cancel"
+          @click="auditStore.cancelTask(taskId)"
+          :disabled="auditStore.cancelling"
+          class="mt-4 px-5 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-500/30 rounded-lg text-sm transition-colors disabled:opacity-50"
+        >
+          {{ auditStore.cancelling ? '取消中...' : '取消检测' }}
+        </button>
       </div>
     </div>
 
@@ -97,51 +95,10 @@ const bottomTabs = [
         <TopCards />
       </div>
 
-      <!-- Main Area: Editor + Right Panel -->
-      <div class="flex-1 flex overflow-hidden min-h-0 px-4 py-4 gap-4">
-        <!-- Center: Code Editor -->
-        <div class="flex-1 min-w-0 bg-[#161b22] border border-[#30363d] rounded-xl overflow-hidden flex flex-col">
-          <!-- Filter Checkboxes -->
-          <div class="flex items-center gap-4 px-4 py-2 border-b border-[#30363d] bg-[#0d1117]/50 shrink-0 overflow-x-auto">
-            <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer whitespace-nowrap">
-              <input type="checkbox" checked class="accent-blue-500" /> 高亮显示
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer whitespace-nowrap">
-              <input type="checkbox" checked class="accent-green-500" /> 已验证
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer whitespace-nowrap">
-              <input type="checkbox" checked class="accent-orange-500" /> 疑似
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer whitespace-nowrap">
-              <input type="checkbox" checked class="accent-yellow-500" /> 预警
-            </label>
-            <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer whitespace-nowrap">
-              <input type="checkbox" checked class="accent-purple-500" /> 未知异常
-            </label>
-          </div>
-          <!-- Editor -->
-          <div class="flex-1 min-h-0">
-            <CodeEditor
-              :findings="auditStore.currentReport.findings"
-              :selected-finding="selectedFinding"
-              @select-finding="handleFindingSelect"
-            />
-          </div>
-        </div>
-
-        <!-- Right Panel: Finding Detail -->
-        <div class="w-80 shrink-0 overflow-hidden">
-          <FindingDetailPanel
-            :finding="selectedFinding"
-            :report="auditStore.currentReport"
-          />
-        </div>
-      </div>
-
       <!-- Bottom Panel -->
-      <div class="border-t border-[#30363d] bg-[#0d1117] shrink-0">
+      <div class="flex-1 flex flex-col border-t border-[#30363d] bg-[#0d1117] min-h-0">
         <!-- Tabs -->
-        <div class="flex items-center border-b border-[#30363d] px-4">
+        <div class="flex items-center border-b border-[#30363d] px-4 shrink-0">
           <button
             v-for="tab in bottomTabs"
             :key="tab.key"
@@ -156,10 +113,9 @@ const bottomTabs = [
         </div>
 
         <!-- Panel Content -->
-        <div class="h-56 overflow-y-auto">
+        <div class="flex-1 overflow-y-auto">
           <TimelinePanel v-if="activeBottomTab === 'timeline'" :report="auditStore.currentReport" />
           <RiskRankingTable v-else-if="activeBottomTab === 'ranking'" :vectors="auditStore.top10RiskVectors" />
-          <RadarChart v-else-if="activeBottomTab === 'radar'" :report="auditStore.currentReport" />
           <RiskWarningList v-else :warnings="auditStore.otherWarnings" />
         </div>
       </div>

@@ -140,14 +140,24 @@ function formatDate(d?: string) {
             <td class="py-3 px-4 text-gray-300 text-xs">{{ task.contract_name || '--' }}</td>
             <td class="py-3 px-4 text-gray-500 text-xs">{{ formatDate(task.created_at) }}</td>
             <td class="py-3 px-4">
-              <button
-                v-if="task.can_retry"
-                @click.stop="auditStore.fetchTask(task.task_id); /* will add retry logic */"
-                class="text-xs text-blue-400 hover:text-blue-300"
-              >
-                重试
-              </button>
-              <span v-else class="text-xs text-gray-600">--</span>
+              <div class="flex items-center gap-2">
+                <button
+                  v-if="task.can_cancel"
+                  @click.stop="auditStore.cancelTask(task.task_id)"
+                  :disabled="auditStore.cancelling"
+                  class="text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                >
+                  取消
+                </button>
+                <button
+                  v-if="task.can_retry"
+                  @click.stop=""
+                  class="text-xs text-blue-400 hover:text-blue-300"
+                >
+                  重试
+                </button>
+                <span v-if="!task.can_cancel && !task.can_retry" class="text-xs text-gray-600">--</span>
+              </div>
             </td>
           </tr>
         </tbody>

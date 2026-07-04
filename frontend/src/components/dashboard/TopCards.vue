@@ -67,19 +67,5 @@ const auditStore = useAuditStore()
         <span class="text-white font-medium">{{ auditStore.currentReport.warnings.length }}</span> 个预警项
       </span>
     </div>
-    <div class="flex items-center gap-3">
-      <button class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 bg-[#161b22] border border-[#30363d] rounded-lg hover:text-white hover:border-[#484f58] transition-colors">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        重新分析
-      </button>
-      <button class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-        </svg>
-        导出报告
-      </button>
-    </div>
   </div>
 </template>

@@ -31,12 +31,27 @@ const router = createRouter({
           component: () => import('@/views/AuditDetailView.vue'),
         },
         {
+          path: 'cross-contract',
+          name: 'CrossContract',
+          component: () => import('@/views/CrossContractView.vue'),
+        },
+        {
+          path: 'risk-ranking',
+          name: 'FunctionRiskRanking',
+          component: () => import('@/views/FunctionRiskRankingView.vue'),
+        },
+        {
+          path: 'repair',
+          name: 'RepairSuggestions',
+          component: () => import('@/views/RepairSuggestionsView.vue'),
+        },
+        {
           path: 'tasks',
           name: 'TaskHistory',
           component: () => import('@/views/TaskHistoryView.vue'),
         },
         {
-          path: 'report/:taskId',
+          path: 'report/:taskId?',
           name: 'Report',
           component: () => import('@/views/ReportView.vue'),
         },
