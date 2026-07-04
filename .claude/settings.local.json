@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "Bash(npm ls *)",
+      "Bash(npx vue-tsc *)",
+      "Bash(npx vite *)"
+    ]
+  }
+}
