@@ -38,8 +38,8 @@ const statusLabels: Record<string, string> = {
   <div class="p-6 max-w-6xl mx-auto">
     <!-- Welcome section -->
     <div class="mb-8">
-      <h1 class="text-2xl font-bold text-white mb-2">VulnSleuth：检索增强与多智能体协同的合约漏洞定位与修复平台</h1>
-      <p class="text-gray-400 text-sm">基于多模型联合推理的智能合约漏洞检测系统 — LSTM + GCN + DeepSVDD + RAG + LLM</p>
+      <h1 class="text-2xl font-bold text-white mb-2">VulnSleuth：多智能体协同驱动的合约漏洞定位与修复平台</h1>
+      <p class="text-gray-400 text-sm">基于多模型联合推理的智能合约漏洞检测系统</p>
     </div>
 
     <!-- Quick actions -->
@@ -161,29 +161,57 @@ const statusLabels: Record<string, string> = {
       </div>
     </div>
 
-    <!-- Architecture Diagram -->
+<!-- Architecture Diagram -->
     <div class="bg-[#161b22] border border-[#30363d] rounded-xl p-6">
       <h3 class="text-sm font-semibold text-white mb-4">检测流程架构</h3>
       <div class="grid grid-cols-5 gap-3 text-center text-xs">
         <div class="p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
-          <div class="text-blue-400 font-medium mb-1">合约预处理</div>
-          <div class="text-gray-500">Solidity解析 · 特征提取 · 字节码编译</div>
+          <div class="text-blue-400 font-medium">合约预处理</div>
         </div>
         <div class="p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
-          <div class="text-purple-400 font-medium mb-1">多模型检测</div>
-          <div class="text-gray-500">LSTM · GCN · DeepSVDD · Static</div>
+          <div class="text-purple-400 font-medium">多模型检测</div>
         </div>
         <div class="p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
-          <div class="text-orange-400 font-medium mb-1">证据汇聚评分</div>
-          <div class="text-gray-500">R_func 风险评分 · RAG 知识匹配</div>
+          <div class="text-orange-400 font-medium">证据汇聚评分</div>
         </div>
         <div class="p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
-          <div class="text-cyan-400 font-medium mb-1">LLM 推理定位</div>
-          <div class="text-gray-500">DeepSeek v4-pro · 漏洞推理</div>
+          <div class="text-cyan-400 font-medium">LLM 推理定位</div>
         </div>
         <div class="p-3 bg-[#0d1117] rounded-lg border border-[#30363d]">
-          <div class="text-green-400 font-medium mb-1">验证与报告</div>
-          <div class="text-gray-500">Slither 验证 · 修复建议</div>
+          <div class="text-green-400 font-medium">验证与报告</div>
+        </div>
+      </div>
+    </div>
+
+<!-- ====== 核心检测能力覆盖 (同宽展示) ====== -->
+    <div class="mt-6">
+      <div class="bg-[#161b22] border border-[#30363d] rounded-xl p-6">
+        <!-- 标题区域居中 -->
+        <div class="text-center mb-6">
+          <h3 class="text-sm font-semibold text-white">核心检测能力覆盖</h3>
+        </div>
+        
+        <!-- 卡片网格：去除描述并居中对齐 -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-center">
+          <!-- 标签项 -->
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="text-xs font-medium text-gray-300">跨合约交互风险</div>
+          </div>
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="text-xs font-medium text-gray-300">经典重入攻击</div>
+          </div>
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="text-xs font-medium text-gray-300">危险委托调用</div>
+          </div>
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="text-xs font-medium text-gray-300">业务逻辑与预言机</div>
+          </div>
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
+            <div class="text-xs font-medium text-gray-300">资产流转风险</div>
+          </div>
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 border-l-2 border-l-purple-500 hover:border-purple-500/40 transition-colors">
+            <div class="text-xs font-medium text-purple-400">未知行为模式发现</div>
+          </div>
         </div>
       </div>
     </div>
@@ -194,5 +222,20 @@ const statusLabels: Record<string, string> = {
       @close="showNewTaskDialog = false"
       @created="(taskId) => { showNewTaskDialog = false; openTask(taskId) }"
     />
+  </div>
+
+  <!-- ====== 页脚 (Footer) ====== -->
+  <!-- mt-auto 确保页面内容较少时页脚也能贴在底部 -->
+  <div class="mt-auto pt-12 pb-6 text-center">
+    <div class="flex items-center justify-center gap-4 text-xs text-gray-500 mb-2">
+      <a href="#" class="hover:text-gray-300 transition-colors">使用文档</a>
+      <span>&middot;</span>
+      <a href="#" class="hover:text-gray-300 transition-colors">知识库更新日志</a>
+      <span>&middot;</span>
+      <a href="#" class="hover:text-gray-300 transition-colors">模型版本 v1.2.0</a>
+    </div>
+    <p class="text-[11px] text-gray-600">
+      &copy; 2026 VulnSleuth Security Platform. 检索增强与多智能体协同架构.
+    </p>
   </div>
 </template>

@@ -89,23 +89,111 @@ const formulaBreakdown = computed(() => {
 })
 
 // --- ECharts ---
+
+// 针状图
+// function buildRadarOption(rv: RiskVector | null) {
+//   const indicator = dimensions.map((d) => ({
+//     name: d.label,
+//     max: 1,
+//   }))
+
+//   const values = rv ? dimensions.map((d) => rv[d.key] as number) : [0, 0, 0, 0, 0, 0]
+
+//   // Build 6 individual dimension rings for the "petals" effect
+//   const seriesData = dimensions.map((d, i) => {
+//     const fullValues = new Array(6).fill(0)
+//     fullValues[i] = values[i]
+//     return {
+//       value: fullValues,
+//       name: d.label,
+//     }
+//   })
+
+//   return {
+//     backgroundColor: 'transparent',
+//     tooltip: {
+//       trigger: 'item' as const,
+//       backgroundColor: '#161b22',
+//       borderColor: '#30363d',
+//       textStyle: { color: '#e6edf3', fontSize: 12 },
+//       formatter: (params: { name?: string; value?: number[]; color?: string }) => {
+//         if (!params.value || !params.name) return ''
+//         const idx = dimensions.findIndex((d) => d.label === params.name)
+//         if (idx < 0) return ''
+//         const d = dimensions[idx]
+//         const raw = values[idx]
+//         const contrib = raw * d.weight
+//         return [
+//           `<div style="font-weight:600;font-size:13px;margin-bottom:4px;color:${d.color}">${d.label}</div>`,
+//           `<div style="color:#8b949e;font-size:11px">原始分数: <span style="color:#e6edf3;font-family:monospace">${(raw * 100).toFixed(1)}%</span></div>`,
+//           `<div style="color:#8b949e;font-size:11px">权重: <span style="color:#e6edf3">${d.weightSign}${d.weight.toFixed(2)}</span></div>`,
+//           `<div style="color:#8b949e;font-size:11px">加权贡献: <span style="color:${d.color};font-family:monospace">${d.weightSign}${contrib.toFixed(4)}</span></div>`,
+//         ].join('')
+//       },
+//     },
+//     legend: {
+//       bottom: 2,
+//       textStyle: { color: '#6e7681', fontSize: 9 },
+//       itemWidth: 8,
+//       itemHeight: 8,
+//       itemGap: 10,
+//     },
+//     radar: {
+//       center: ['50%', '46%'],
+//       radius: '68%',
+//       indicator: indicator.map((ind, i) => ({
+//         ...ind,
+//         color: dimensions[i].color,
+//       })),
+//       axisName: {
+//         color: '#8b949e',
+//         fontSize: 9,
+//         formatter: (label: string) => {
+//           const d = dimensions.find((dd) => dd.label === label)
+//           return d ? d.symbol : label.length > 5 ? label.slice(0, 4) + '..' : label
+//         },
+//       },
+//       axisLine: { lineStyle: { color: '#21262d' } },
+//       splitLine: { lineStyle: { color: '#21262d' } },
+//       splitArea: {
+//         areaStyle: {
+//           color: [
+//             'rgba(88, 166, 255, 0.03)',
+//             'rgba(88, 166, 255, 0.07)',
+//           ],
+//         },
+//       },
+//     },
+//     series: dimensions.map((d, i) => ({
+//       type: 'radar' as const,
+//       name: d.symbol,
+//       symbol: 'none' as const,
+//       lineStyle: { color: d.color, width: 1.5, type: 'solid' as const },
+//       areaStyle: { color: d.color + '20' },
+//       itemStyle: { color: d.color },
+//       data: [
+//         {
+//           value: seriesData[i].value,
+//           name: d.symbol,
+//         },
+//       ],
+//       emphasis: {
+//         lineStyle: { width: 2.5 },
+//         areaStyle: { color: d.color + '40' },
+//       },
+//     })),
+//   }
+// }
+
+// 多边形
 function buildRadarOption(rv: RiskVector | null) {
   const indicator = dimensions.map((d) => ({
     name: d.label,
     max: 1,
   }))
 
+  // 提取当前选中的函数在所有 6 个维度上的分数
   const values = rv ? dimensions.map((d) => rv[d.key] as number) : [0, 0, 0, 0, 0, 0]
-
-  // Build 6 individual dimension rings for the "petals" effect
-  const seriesData = dimensions.map((d, i) => {
-    const fullValues = new Array(6).fill(0)
-    fullValues[i] = values[i]
-    return {
-      value: fullValues,
-      name: d.label,
-    }
-  })
 
   return {
     backgroundColor: 'transparent',
@@ -113,39 +201,43 @@ function buildRadarOption(rv: RiskVector | null) {
       trigger: 'item' as const,
       backgroundColor: '#161b22',
       borderColor: '#30363d',
+      padding: 12,
       textStyle: { color: '#e6edf3', fontSize: 12 },
-      formatter: (params: { name?: string; value?: number[]; color?: string }) => {
-        if (!params.value || !params.name) return ''
-        const idx = dimensions.findIndex((d) => d.label === params.name)
-        if (idx < 0) return ''
-        const d = dimensions[idx]
-        const raw = values[idx]
-        const contrib = raw * d.weight
-        return [
-          `<div style="font-weight:600;font-size:13px;margin-bottom:4px;color:${d.color}">${d.label}</div>`,
-          `<div style="color:#8b949e;font-size:11px">原始分数: <span style="color:#e6edf3;font-family:monospace">${(raw * 100).toFixed(1)}%</span></div>`,
-          `<div style="color:#8b949e;font-size:11px">权重: <span style="color:#e6edf3">${d.weightSign}${d.weight.toFixed(2)}</span></div>`,
-          `<div style="color:#8b949e;font-size:11px">加权贡献: <span style="color:${d.color};font-family:monospace">${d.weightSign}${contrib.toFixed(4)}</span></div>`,
-        ].join('')
+      formatter: (params: { value?: number[] }) => {
+        if (!params.value) return ''
+        let html = `<div style="font-weight:600;font-size:13px;margin-bottom:8px;color:#e6edf3">多维风险评估明细</div>`
+        
+        // 遍历所有维度，在一个 Tooltip 中整齐展示
+        dimensions.forEach((d, i) => {
+          const raw = params.value![i]
+          const contrib = raw * d.weight
+          html += `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-size:12px;">
+              <span style="color:${d.color};margin-right:16px;">
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background-color:${d.color};margin-right:6px;"></span>
+                ${d.label}
+              </span>
+              <span style="color:#8b949e;">
+                原始: <span style="color:#e6edf3;font-family:monospace;margin-right:8px">${(raw * 100).toFixed(1)}%</span>
+                贡献: <span style="color:${d.color};font-family:monospace">${d.weightSign}${contrib.toFixed(4)}</span>
+              </span>
+            </div>
+          `
+        })
+        return html
       },
     },
-    legend: {
-      bottom: 2,
-      textStyle: { color: '#6e7681', fontSize: 9 },
-      itemWidth: 8,
-      itemHeight: 8,
-      itemGap: 10,
-    },
+    // 雷达图背景网格配置保持不变
     radar: {
-      center: ['50%', '46%'],
-      radius: '68%',
+      center: ['50%', '50%'],
+      radius: '65%',
       indicator: indicator.map((ind, i) => ({
         ...ind,
         color: dimensions[i].color,
       })),
       axisName: {
         color: '#8b949e',
-        fontSize: 9,
+        fontSize: 10,
         formatter: (label: string) => {
           const d = dimensions.find((dd) => dd.label === label)
           return d ? d.symbol : label.length > 5 ? label.slice(0, 4) + '..' : label
@@ -162,24 +254,28 @@ function buildRadarOption(rv: RiskVector | null) {
         },
       },
     },
-    series: dimensions.map((d, i) => ({
-      type: 'radar' as const,
-      name: d.symbol,
-      symbol: 'none' as const,
-      lineStyle: { color: d.color, width: 1.5, type: 'solid' as const },
-      areaStyle: { color: d.color + '20' },
-      itemStyle: { color: d.color },
-      data: [
-        {
-          value: seriesData[i].value,
-          name: d.symbol,
+    // 将原本的 map 数组替换为单一的 series，从而闭合成多边形
+    series: [
+      {
+        type: 'radar',
+        name: '综合风险',
+        symbol: 'circle',
+        symbolSize: 6,
+        itemStyle: { color: '#58a6ff' }, // 多边形主色调
+        lineStyle: { color: '#58a6ff', width: 2 }, // 连线粗细
+        areaStyle: { color: 'rgba(88, 166, 255, 0.25)' }, // 内部填充的半透明颜色
+        emphasis: {
+          lineStyle: { width: 3 },
+          areaStyle: { color: 'rgba(88, 166, 255, 0.45)' },
         },
-      ],
-      emphasis: {
-        lineStyle: { width: 2.5 },
-        areaStyle: { color: d.color + '40' },
-      },
-    })),
+        data: [
+          {
+            value: values,
+            name: '风险分数',
+          }
+        ]
+      }
+    ],
   }
 }
 

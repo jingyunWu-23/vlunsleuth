@@ -14,6 +14,7 @@ const mode = ref<AuditMode>('full_audit')
 const needVerification = ref(true)
 const loading = ref(false)
 const error = ref('')
+const isDragging = ref(false)
 
 const modeLabels: Record<AuditMode, string> = {
   full_audit: '全面审计 (推荐)',
@@ -59,6 +60,24 @@ async function handleSubmit() {
     error.value = auditStore.error || '创建任务失败'
   }
 }
+
+function handleDrop(e: DragEvent) {
+  isDragging.value = false // 恢复 UI 状态
+  
+  const droppedFiles = e.dataTransfer?.files
+  if (droppedFiles && droppedFiles.length > 0) {
+    const droppedFile = droppedFiles[0]
+    
+    // 简单校验文件后缀名
+    if (droppedFile.name.endsWith('.sol') || droppedFile.name.endsWith('.zip')) {
+      file.value = droppedFile
+    } else {
+      // 格式错误提示（如果你项目里有类似 ElMessage 的组件，可以替换掉 alert）
+      alert('格式错误：请上传 .sol 或 .zip 格式的文件')
+    }
+  }
+}
+
 </script>
 
 <template>
@@ -74,20 +93,29 @@ async function handleSubmit() {
       </div>
 
       <div class="p-5 space-y-5">
+        
         <!-- File Upload -->
         <div>
           <label class="block text-sm text-gray-400 mb-2">合约文件</label>
           <label
-            class="flex flex-col items-center gap-2 p-6 border-2 border-dashed border-[#30363d] rounded-xl cursor-pointer hover:border-blue-500/50 transition-colors"
+            class="flex flex-col items-center gap-2 p-6 border-2 border-dashed rounded-xl cursor-pointer transition-all duration-200"
+            :class="isDragging ? 'border-blue-500 bg-blue-500/10' : 'border-[#30363d] hover:border-blue-500/50'"
+            @dragover.prevent="isDragging = true"
+            @dragenter.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            @drop.prevent="handleDrop"
           >
-            <svg v-if="!file" class="w-10 h-10 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg v-if="!file" class="w-10 h-10 transition-colors" :class="isDragging ? 'text-blue-400' : 'text-gray-600'" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
             </svg>
             <svg v-else class="w-10 h-10 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span v-if="!file" class="text-sm text-gray-500">拖拽 .sol / .zip 文件到此处，或点击选择</span>
+            <span v-if="!file" class="text-sm transition-colors" :class="isDragging ? 'text-blue-400' : 'text-gray-500'">
+              {{ isDragging ? '松开鼠标完成上传' : '拖拽 .sol / .zip 文件到此处，或点击选择' }}
+            </span>
             <span v-else class="text-sm text-blue-400 font-medium">{{ file.name }}</span>
+            
             <input type="file" accept=".sol,.zip" class="hidden" @change="handleFileChange" />
           </label>
         </div>

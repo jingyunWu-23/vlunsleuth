@@ -172,14 +172,14 @@ function printPDF() {
 // --- Workflow steps (static, populated from report metadata when available) ---
 const workflowSteps = [
   { label: '源码加载', desc: 'Solidity 文件解析与 AST 提取', time: '~0.5s' },
-  { label: 'LSTM 检测', desc: '4 类已知漏洞模型推理', time: '~4s' },
-  { label: 'GCN 图分析', desc: '跨合约调用图风险检测', time: '~3.5s' },
-  { label: 'DeepSVNN 检测', desc: '异常行为偏离度分析', time: '~5s' },
+  { label: '已知漏洞发现', desc: '8 类已知漏洞模型推理', time: '~4s' },
+  { label: '跨合约关联分析', desc: '跨合约调用图交互风险检测', time: '~3.5s' },
+  { label: '未知风险发现', desc: '异常行为偏离度分析与预警', time: '~5s' },
   { label: '风险评分', desc: 'R_func 多维融合评分', time: '~1.5s' },
   { label: 'RAG 匹配', desc: '知识库语义相似度检索', time: '~0.8s' },
-  { label: 'LLM 推理', desc: 'DeepSeek v4-pro 漏洞推理与定位', time: '~8s' },
+  { label: 'LLM 推理', desc: '调用大语言模型进行漏洞推理与定位', time: '~8s' },
   { label: '验证', desc: 'Slither + LLM 双重验证', time: '~3s' },
-  { label: '报告生成', desc: 'Markdown + JSON 报告输出', time: '~1s' },
+  { label: '报告生成', desc: 'Markdown报告输出', time: '~1s' },
 ]
 </script>
 
@@ -268,7 +268,7 @@ const workflowSteps = [
 
             <!-- Right: Action buttons -->
             <div class="flex items-center gap-3 shrink-0 print:hidden">
-              <button
+              <!-- <button
                 @click="printPDF"
                 class="flex items-center gap-2 px-4 py-2.5 bg-[#0d1117] border border-[#30363d] text-gray-300 text-sm rounded-lg hover:border-[#484f58] hover:text-white transition-colors"
               >
@@ -276,7 +276,7 @@ const workflowSteps = [
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                 </svg>
                 打印 / 导出 PDF
-              </button>
+              </button> -->
               <button
                 @click="downloadMarkdown"
                 class="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
