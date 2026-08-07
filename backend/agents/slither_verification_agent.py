@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 from dataclasses import asdict
@@ -11,10 +14,18 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from backend.agents.llm_client import LLMClient, build_llm_client
 from backend.function_risk.risk_score import normalize_vulnerability
+from backend.preprocessing.source_loader import read_text
 from backend.schemas import AuditReport, Finding, FunctionUnit
 
 
 SLITHER_TIMEOUT_SECONDS = 120
+SOLC_VERSION_BY_MINOR = {
+    "0.4": "0.4.26",
+    "0.5": "0.5.17",
+    "0.6": "0.6.12",
+    "0.7": "0.7.6",
+    "0.8": "0.8.35",
+}
 
 DETECTOR_TO_VULN = {
     "reentrancy-benign": "VULN_REENTRANCY",
@@ -91,7 +102,7 @@ def verify_report_with_slither(
 
 
 def run_slither(source_path: str, output_dir: str | Path | None = None) -> Dict[str, Any]:
-    executable = shutil.which("slither")
+    executable = find_slither_executable()
     if not executable:
         return {
             "tool": "slither",
@@ -106,6 +117,7 @@ def run_slither(source_path: str, output_dir: str | Path | None = None) -> Dict[
     artifact_path = output_root / "slither_results.json" if output_root else None
 
     temp_dir: Optional[tempfile.TemporaryDirectory[str]] = None
+    json_temp_path: Optional[Path] = None
     try:
         analysis_target = prepare_slither_target(source_path)
         if isinstance(analysis_target, tuple):
@@ -113,25 +125,45 @@ def run_slither(source_path: str, output_dir: str | Path | None = None) -> Dict[
         else:
             target = analysis_target
 
-        json_path = artifact_path or Path(tempfile.gettempdir()) / "scg_slither_results.json"
-        command = [executable, str(target), "--json", str(json_path), "--disable-color"]
+        target_path = target.resolve()
+        json_handle = tempfile.NamedTemporaryFile(prefix="scg_slither_", suffix=".json", delete=False)
+        json_temp_path = Path(json_handle.name)
+        json_handle.close()
+        json_temp_path.unlink(missing_ok=True)
+        json_path = json_temp_path.resolve()
+        solc_version = infer_solc_version(target_path)
+        command = [executable, str(target_path), "--json", str(json_path), "--disable-color"]
         completed = subprocess.run(
             command,
-            cwd=str(target if target.is_dir() else target.parent),
+            cwd=str(target_path if target_path.is_dir() else target_path.parent),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=build_slither_env(executable, solc_version),
             timeout=SLITHER_TIMEOUT_SECONDS,
         )
         raw = read_json_file(json_path)
+        if artifact_path and json_path.exists():
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(json_path, artifact_path)
         detectors = normalize_slither_detectors(raw)
+        status = "completed"
+        error = None
+        if completed.returncode != 0 and not detectors:
+            status = classify_slither_failure(completed.stdout, completed.stderr)
+            error = summarize_slither_error(completed.stdout, completed.stderr)
         return {
             "tool": "slither",
-            "status": "completed",
+            "status": status,
             "exit_code": completed.returncode,
             "command": command_for_metadata(command),
-            "artifact": str(json_path),
+            "solc_version": solc_version,
+            "artifact": str(artifact_path or json_path),
+            "staged_target": str(target_path),
             "stdout": completed.stdout[-4000:],
             "stderr": completed.stderr[-4000:],
+            "error": error,
             "detector_count": len(detectors),
             "detectors": detectors,
         }
@@ -154,16 +186,130 @@ def run_slither(source_path: str, output_dir: str | Path | None = None) -> Dict[
     finally:
         if temp_dir is not None:
             temp_dir.cleanup()
+        if json_temp_path is not None and json_temp_path.exists():
+            try:
+                json_temp_path.unlink()
+            except OSError:
+                pass
+
+
+def find_slither_executable() -> str | None:
+    configured = os.getenv("SCG_SLITHER_PATH")
+    if configured and Path(configured).exists():
+        return configured
+    python_dir = Path(sys.executable).resolve().parent
+    for candidate in (
+        python_dir / "Scripts" / "slither.exe",
+        python_dir / "Scripts" / "slither",
+        python_dir.parent / "Scripts" / "slither.exe",
+        python_dir.parent / "Scripts" / "slither",
+    ):
+        if candidate.exists():
+            return str(candidate)
+    executable = shutil.which("slither")
+    if executable:
+        return executable
+    return None
+
+
+def build_slither_env(executable: str, solc_version: str | None = None) -> Dict[str, str]:
+    env = os.environ.copy()
+    scripts_dir = str(Path(executable).resolve().parent)
+    paths = env.get("PATH", "").split(os.pathsep) if env.get("PATH") else []
+    if scripts_dir not in paths:
+        env["PATH"] = os.pathsep.join([scripts_dir, *paths])
+    if solc_version:
+        env["SOLC_VERSION"] = solc_version
+    return env
+
+
+def infer_solc_version(target: Path) -> str | None:
+    pragmas: List[str] = []
+    files = [target] if target.is_file() else list(target.rglob("*.sol"))
+    for item in files[:20]:
+        try:
+            text = read_text(item)
+        except Exception:
+            continue
+        pragmas.extend(re.findall(r"pragma\s+solidity\s+([^;]+);", text))
+    for pragma in pragmas:
+        match = re.search(r"0\.(\d+)", pragma)
+        if match:
+            return SOLC_VERSION_BY_MINOR.get(f"0.{match.group(1)}")
+    return None
+
+
+def classify_slither_failure(stdout: str, stderr: str) -> str:
+    combined = f"{stdout}\n{stderr}".lower()
+    if "solc" in combined and (
+        "not found" in combined
+        or "cannot find" in combined
+        or "系统找不到指定的文件" in combined
+        or "invalidcompilation" in combined
+        or "not installed" in combined
+    ):
+        return "compile_error"
+    if "invalidcompilation" in combined or "compilation" in combined:
+        return "compile_error"
+    return "error"
+
+
+def summarize_slither_error(stdout: str, stderr: str) -> str:
+    combined = [line.strip() for line in f"{stdout}\n{stderr}".splitlines() if line.strip()]
+    if not combined:
+        return "Slither exited with a non-zero status and produced no detectors."
+    interesting = [
+        line for line in combined
+        if "solc" in line.lower()
+        or "invalidcompilation" in line.lower()
+        or "not found" in line.lower()
+        or "系统找不到指定的文件" in line
+    ]
+    return " | ".join((interesting or combined)[-4:])
 
 
 def prepare_slither_target(source_path: str) -> Path | tuple[Path, tempfile.TemporaryDirectory[str]]:
     path = Path(source_path)
+    temp_dir = tempfile.TemporaryDirectory(prefix="scg_slither_")
+    temp_root = Path(temp_dir.name)
     if path.is_file() and path.suffix.lower() == ".zip":
-        temp_dir = tempfile.TemporaryDirectory(prefix="scg_slither_")
         with zipfile.ZipFile(path) as archive:
-            archive.extractall(temp_dir.name)
-        return Path(temp_dir.name), temp_dir
+            archive.extractall(temp_root)
+        normalize_solidity_files_to_utf8(temp_root)
+        return temp_root, temp_dir
+    if path.is_file() and path.suffix.lower() == ".sol":
+        target = temp_root / safe_ascii_filename(path.name, default="source.sol")
+        target.write_text(read_text(path), encoding="utf-8")
+        return target, temp_dir
+    if path.is_dir():
+        target = temp_root / "source_project"
+        shutil.copytree(path, target)
+        normalize_solidity_files_to_utf8(target)
+        return target, temp_dir
+    temp_dir.cleanup()
     return path
+
+
+def safe_ascii_filename(name: str, default: str = "source.sol") -> str:
+    path = Path(name)
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", path.stem).strip("._")
+    suffix = re.sub(r"[^A-Za-z0-9.]+", "", path.suffix) or ".sol"
+    return f"{stem or Path(default).stem}{suffix}"
+
+
+def is_utf8_text(path: Path) -> bool:
+    try:
+        path.read_text(encoding="utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
+def normalize_solidity_files_to_utf8(path: Path) -> None:
+    targets = [path] if path.is_file() and path.suffix.lower() == ".sol" else list(path.rglob("*.sol"))
+    for item in targets:
+        if not is_utf8_text(item):
+            item.write_text(read_text(item), encoding="utf-8")
 
 
 def normalize_slither_detectors(raw: Dict[str, Any]) -> List[Dict[str, Any]]:

@@ -1,0 +1,63 @@
+{
+  "output_jsonl": "dataset/knowledge/unified_multi_agent_knowledge.jsonl",
+  "input_files": [
+    "dataset/knowledge/multi_agent_knowledge.jsonl",
+    "dataset/dataset/dataset/processed-2/scabench_multi_agent_knowledge.jsonl",
+    "dataset/knowledge/smartbugs_multi_agent_knowledge.jsonl"
+  ],
+  "input_counts": {
+    "dataset/knowledge/multi_agent_knowledge.jsonl": 1421,
+    "dataset/dataset/dataset/processed-2/scabench_multi_agent_knowledge.jsonl": 3885,
+    "dataset/knowledge/smartbugs_multi_agent_knowledge.jsonl": 1449
+  },
+  "merged_entries": 6755,
+  "duplicate_count": 0,
+  "duplicate_ids_sample": [],
+  "dataset_counts": {
+    "DAppSCAN": 1421,
+    "SCABench": 3885,
+    "SmartBugs": 1449
+  },
+  "knowledge_type_counts": {
+    "real_case": 965,
+    "vulnerability_reason": 965,
+    "localization": 965,
+    "cross_contract_relation": 965,
+    "verification": 965,
+    "repair": 965,
+    "report_reference": 965
+  },
+  "source_type_counts": {
+    "benchmark_case": 965,
+    "derived_from_case": 5380,
+    "rule_generated": 410
+  },
+  "swc_id_counts": {
+    "SWC-102": 98,
+    "SWC-101": 287,
+    "SWC-103": 203,
+    "SWC-135": 231,
+    "SWC-100": 112,
+    "SWC-114": 84,
+    "SWC-116": 77,
+    "SWC-105": 77,
+    "SWC-107": 378,
+    "SWC-113": 105,
+    "SWC-128": 42,
+    "SWC-112": 14,
+    "SWC-104": 609,
+    "SWC-119": 91,
+    "SWC-129": 21,
+    "SWC-131": 35,
+    "SWC-108": 14,
+    "SWC-123": 7,
+    "SWC-111": 14,
+    "SWC-110": 7,
+    "unknown": 3983,
+    "SWC-124": 14,
+    "SWC-118": 14,
+    "SWC-106": 21,
+    "SWC-120": 217
+  },
+  "generated_at": "2026-07-01"
+}

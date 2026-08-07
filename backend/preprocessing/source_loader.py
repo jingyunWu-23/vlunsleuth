@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import zipfile
@@ -8,12 +9,13 @@ from backend.schemas import SourceFile
 
 
 def read_text(path: Path) -> str:
-    for encoding in ("utf-8", "utf-8-sig", "gbk", "latin-1"):
+    data = path.read_bytes()
+    for encoding in ("utf-8", "utf-8-sig", "gb18030", "gbk", "cp936", "latin-1"):
         try:
-            return path.read_text(encoding=encoding)
-        except UnicodeDecodeError:
+            return data.decode(encoding)
+        except UnicodeError:
             continue
-    return path.read_text(errors="ignore")
+    return data.decode("latin-1", errors="replace")
 
 
 def load_sources(source_path: str) -> List[SourceFile]:
@@ -40,4 +42,3 @@ def load_sources(source_path: str) -> List[SourceFile]:
     if not sources:
         raise ValueError(f"No Solidity source files found under: {source_path}")
     return sources
-

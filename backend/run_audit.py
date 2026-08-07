@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict
+from contextlib import contextmanager
+from time import perf_counter
 from pathlib import Path
 
 from backend.agents.reasoning_localization_agent import build_findings_and_warnings
@@ -15,58 +16,97 @@ from backend.preprocessing.feature_extractor import build_analysis_input
 from backend.preprocessing.source_loader import load_sources
 from backend.rag.knowledge_context import build_knowledge_context
 from backend.rag.jsonl_knowledge_store import JsonlKnowledgeStore
-from backend.reporting.markdown_report import write_markdown
+from backend.reporting.markdown_report import report_to_dict, write_markdown
 from backend.router.workflow_router import build_workflow
 from backend.schemas import AuditReport, AuditRequest
 
 
+class PhaseTimer:
+    def __init__(self) -> None:
+        self._started_at = perf_counter()
+        self._phases: list[dict[str, float | str]] = []
+
+    @contextmanager
+    def phase(self, name: str):
+        started = perf_counter()
+        try:
+            yield
+        finally:
+            finished = perf_counter()
+            self._phases.append({
+                "name": name,
+                "seconds": round(finished - started, 4),
+            })
+
+    def summary(self) -> dict:
+        total = perf_counter() - self._started_at
+        phases = list(self._phases)
+        measured = sum(float(item["seconds"]) for item in phases)
+        return {
+            "total_seconds": round(total, 4),
+            "measured_phase_seconds": round(measured, 4),
+            "unmeasured_overhead_seconds": round(max(0.0, total - measured), 4),
+            "phases": phases,
+        }
+
+
 def run_audit(request: AuditRequest) -> AuditReport:
-    sources = load_sources(request.source_path)
-    target = request.target_vulnerabilities[0] if request.target_vulnerabilities else None
-    analysis = build_analysis_input(request.task_id, sources, target_vulnerability=target)
-    workflow = build_workflow(request, analysis)
+    timer = PhaseTimer()
+    with timer.phase("source_loading"):
+        sources = load_sources(request.source_path)
+    with timer.phase("preprocessing_and_feature_extraction"):
+        target = request.target_vulnerabilities[0] if request.target_vulnerabilities else None
+        analysis = build_analysis_input(request.task_id, sources, target_vulnerability=target)
+    with timer.phase("workflow_routing"):
+        workflow = build_workflow(request, analysis)
 
     center = EvidenceCenter()
-    center.register_functions(analysis.functions)
-    center.add_static_evidence(analysis.functions, task_id=request.task_id)
-    registry = build_default_registry(target_vulnerabilities=request.target_vulnerabilities or None)
-    selected_adapters = registry.select_for_workflow(workflow.formal_models)
-    evidences, adapter_results = execute_adapters(selected_adapters, analysis)
-    center.add_many(evidences)
+    with timer.phase("static_evidence_registration"):
+        center.register_functions(analysis.functions)
+        center.add_static_evidence(analysis.functions, task_id=request.task_id)
+    with timer.phase("model_adapter_inference"):
+        registry = build_default_registry(target_vulnerabilities=request.target_vulnerabilities or None)
+        selected_adapters = registry.select_for_workflow(workflow.formal_models)
+        evidences, adapter_results = execute_adapters(selected_adapters, analysis)
+        center.add_many(evidences)
 
-    initial_risk_vectors = compute_risk_vectors(
-        analysis.functions,
-        center.grouped(),
-        selected_vulnerabilities=request.target_vulnerabilities,
-    )
-    reasoning_selection = select_reasoning_targets(initial_risk_vectors)
+    with timer.phase("initial_risk_scoring_and_reasoning_gate"):
+        initial_risk_vectors = compute_risk_vectors(
+            analysis.functions,
+            center.grouped(),
+            selected_vulnerabilities=request.target_vulnerabilities,
+        )
+        reasoning_selection = select_reasoning_targets(initial_risk_vectors)
 
-    store = JsonlKnowledgeStore()
-    fn_by_id = {fn.function_id: fn for fn in analysis.functions}
-    preliminary_vector_by_id = {vector.function_id: vector for vector in initial_risk_vectors}
-    knowledge_contexts = {}
-    for function_id in reasoning_selection.selected_function_ids:
-        fn = fn_by_id.get(function_id)
-        if not fn:
-            continue
-        context = build_knowledge_context(store, fn, preliminary_vector_by_id.get(function_id), top_k=5)
-        knowledge_contexts[function_id] = context
-        center.add_knowledge_evidence(fn, context.items, task_id=request.task_id)
+    with timer.phase("knowledge_retrieval"):
+        store = JsonlKnowledgeStore()
+        fn_by_id = {fn.function_id: fn for fn in analysis.functions}
+        preliminary_vector_by_id = {vector.function_id: vector for vector in initial_risk_vectors}
+        knowledge_contexts = {}
+        for function_id in reasoning_selection.selected_function_ids:
+            fn = fn_by_id.get(function_id)
+            if not fn:
+                continue
+            context = build_knowledge_context(store, fn, preliminary_vector_by_id.get(function_id), top_k=5)
+            knowledge_contexts[function_id] = context
+            center.add_knowledge_evidence(fn, context.items, task_id=request.task_id)
 
-    risk_vectors = compute_risk_vectors(
-        analysis.functions,
-        center.grouped(),
-        selected_vulnerabilities=request.target_vulnerabilities,
-    )
-    findings, warnings = build_findings_and_warnings(
-        analysis.functions,
-        risk_vectors,
-        center.grouped(),
-        store=store,
-        selected_vulnerabilities=request.target_vulnerabilities,
-        reasoning_selection=reasoning_selection,
-        knowledge_contexts=knowledge_contexts,
-    )
+    with timer.phase("final_risk_scoring"):
+        risk_vectors = compute_risk_vectors(
+            analysis.functions,
+            center.grouped(),
+            selected_vulnerabilities=request.target_vulnerabilities,
+        )
+    with timer.phase("reasoning_localization"):
+        findings, warnings = build_findings_and_warnings(
+            analysis.functions,
+            risk_vectors,
+            center.grouped(),
+            store=store,
+            selected_vulnerabilities=request.target_vulnerabilities,
+            reasoning_selection=reasoning_selection,
+            knowledge_contexts=knowledge_contexts,
+        )
     report = AuditReport(
         task_id=request.task_id,
         mode=request.mode,
@@ -91,15 +131,17 @@ def run_audit(request: AuditRequest) -> AuditReport:
         },
     )
     if request.need_verification:
-        verification_output_dir = Path(request.output_dir) if request.output_dir else None
-        report.metadata["verification"] = {
-            "slither": verify_report_with_slither(
-                report,
-                analysis.functions,
-                request.source_path,
-                output_dir=verification_output_dir,
-            )
-        }
+        with timer.phase("verification"):
+            verification_output_dir = Path(request.output_dir) if request.output_dir else None
+            report.metadata["verification"] = {
+                "slither": verify_report_with_slither(
+                    report,
+                    analysis.functions,
+                    request.source_path,
+                    output_dir=verification_output_dir,
+                )
+            }
+    report.metadata["phase_timings"] = timer.summary()
     return report
 
 
@@ -125,8 +167,10 @@ def main() -> None:
     report = run_audit(request)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / f"{request.task_id}.json").write_text(json.dumps(asdict(report), ensure_ascii=False, indent=2), encoding="utf-8")
+    started = perf_counter()
     write_markdown(report, output_dir / f"{request.task_id}.md")
+    report.metadata["phase_timings"]["report_generation_seconds"] = round(perf_counter() - started, 4)
+    (output_dir / f"{request.task_id}.json").write_text(json.dumps(report_to_dict(report), ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report.metadata, ensure_ascii=False, indent=2))
 
 
