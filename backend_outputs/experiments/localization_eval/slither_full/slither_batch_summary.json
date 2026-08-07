@@ -1,0 +1,14 @@
+{
+  "dataset_root": "dataset\\localization_eval",
+  "output_dir": "backend_outputs\\experiments\\localization_eval\\slither_full",
+  "sample_count": 476,
+  "discovered_sample_count": 476,
+  "total_discovered_sample_count": 476,
+  "start_index": 1,
+  "limit": null,
+  "pseudo_label_count": 324,
+  "error_count": 0,
+  "labels_csv": "backend_outputs\\experiments\\localization_eval\\slither_full\\slither_function_labels.csv",
+  "samples_csv": "backend_outputs\\experiments\\localization_eval\\slither_full\\slither_samples_summary.csv",
+  "errors_csv": null
+}
