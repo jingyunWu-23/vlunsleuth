@@ -42,6 +42,15 @@ class Warning:
     evidence: List[ModelEvidence] = field(default_factory=list)
     verification_allowed: bool = False
     repair_allowed: bool = False
+    source: Optional[str] = None
+    trust_level: Optional[str] = None
+    requires_human_review: bool = False
+    risk_title: Optional[str] = None
+    risk_type_freeform: Optional[str] = None
+    reasoning: Dict[str, Any] = field(default_factory=dict)
+    location: List[Dict[str, Any]] = field(default_factory=list)
+    verification_plan: Dict[str, Any] = field(default_factory=dict)
+    repair_suggestion: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

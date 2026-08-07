@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List, Set, Tuple
 
+from backend.agents.llm_unknown_risk_agent import LLMUnknownRiskAgent
 from backend.agents.llm_reasoning_service import LLMReasoningService
 from backend.function_risk.reasoning_gate import ReasoningSelection
 from backend.function_risk.risk_score import (
@@ -25,6 +26,7 @@ def build_findings_and_warnings(
     reasoning_selection: ReasoningSelection | None = None,
     knowledge_contexts: Dict[str, KnowledgeContext] | None = None,
     llm_service: LLMReasoningService | None = None,
+    unknown_risk_agent: LLMUnknownRiskAgent | None = None,
 ) -> Tuple[List[Finding], List[Warning]]:
     selected = {normalize_vulnerability(item) for item in (selected_vulnerabilities or [])}
     fn_by_id = {fn.function_id: fn for fn in functions}
@@ -33,6 +35,7 @@ def build_findings_and_warnings(
     store = store or JsonlKnowledgeStore()
     knowledge_contexts = knowledge_contexts or {}
     llm_service = llm_service or LLMReasoningService()
+    unknown_risk_agent = unknown_risk_agent or LLMUnknownRiskAgent()
 
     for vector in risk_vectors[:20]:
         if reasoning_selection and not reasoning_selection.contains(vector.function_id):
@@ -50,7 +53,7 @@ def build_findings_and_warnings(
 
         grouped = group_primary_evidence(fn, vector, evidences, selected)
         warnings.extend(build_rejected_warnings(fn, vector, evidences, selected))
-        warnings.extend(build_anomaly_warnings(fn, vector, evidences))
+        warnings.extend(build_unknown_risk_warnings(fn, vector, evidences, grouped, unknown_risk_agent))
 
         for vulnerability_id, primary_evidences in grouped.items():
             if not semantic_category_allowed(fn, vulnerability_id):
@@ -212,6 +215,64 @@ def build_anomaly_warnings(fn: FunctionUnit, vector: RiskVector, evidences: List
             evidence=[evidence],
         ))
     return warnings
+
+
+def build_unknown_risk_warnings(
+    fn: FunctionUnit,
+    vector: RiskVector,
+    evidences: List[ModelEvidence],
+    grouped_known: Dict[str, List[ModelEvidence]],
+    unknown_risk_agent: LLMUnknownRiskAgent,
+) -> List[Warning]:
+    anomaly_evidences = [
+        evidence
+        for evidence in evidences
+        if evidence.model_id.startswith("DEEPSVDD") and evidence.calibrated_confidence >= 0.55
+    ]
+    if not anomaly_evidences:
+        return []
+
+    known_evidences = [
+        evidence
+        for values in grouped_known.values()
+        for evidence in values
+        if evidence.calibrated_confidence >= 0.55
+    ]
+    if known_evidences:
+        return []
+
+    result = unknown_risk_agent.reason_unknown_risk(fn, vector, anomaly_evidences, known_evidences)
+    target_vulnerability = result.get("target_vulnerability", "VULN_UNKNOWN_ANOMALY")
+    action = "review_llm_semantic_warning" if target_vulnerability == "VULN_LLM_SEMANTIC_WARNING" else "review_anomaly"
+    status = "llm_semantic_warning" if target_vulnerability == "VULN_LLM_SEMANTIC_WARNING" else "anomaly_warning"
+    if result.get("status") != "suspected":
+        status = "inconclusive"
+
+    return [Warning(
+        warning_id=f"W-LLM-{abs(hash(fn.function_id + target_vulnerability)) % 100000:05d}",
+        scope="out_of_scope",
+        status=status,
+        contract_name=fn.contract_name,
+        function_signature=fn.signature,
+        target_vulnerability=target_vulnerability,
+        score=max([vector.r_func, float(result.get("confidence", 0.0))] + [item.calibrated_confidence for item in anomaly_evidences]),
+        summary=str(result.get("summary") or "Unknown anomaly requires manual review."),
+        recommended_action={
+            "action": action,
+            "target_vulnerability": target_vulnerability,
+            "risk_type_freeform": str(result.get("risk_type_freeform", "")),
+        },
+        evidence=anomaly_evidences,
+        source=str(result.get("source") or "ANOMALY_SIGNAL"),
+        trust_level=str(result.get("trust_level") or "tentative"),
+        requires_human_review=bool(result.get("requires_human_review", True)),
+        risk_title=str(result.get("risk_title") or ""),
+        risk_type_freeform=str(result.get("risk_type_freeform") or ""),
+        reasoning=result,
+        location=result.get("location") or [],
+        verification_plan=result.get("verification_plan") or {},
+        repair_suggestion=result.get("repair_suggestion") or {},
+    )]
 
 
 def make_warning(vector: RiskVector, evidence: ModelEvidence) -> Warning:

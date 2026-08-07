@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, Dict
 
 from backend.function_risk.risk_score import normalize_vulnerability
 from backend.schemas import AuditReport
@@ -74,6 +75,22 @@ def render_markdown(report: AuditReport) -> str:
             f"- 推荐操作：`{translate_action(warning.recommended_action.get('action'))}`",
             "",
         ])
+        if warning.risk_title:
+            lines.append(f"- LLM 风险标题：{warning.risk_title}")
+        if warning.risk_type_freeform:
+            lines.append(f"- 自由风险类型：`{warning.risk_type_freeform}`")
+        if warning.source:
+            lines.append(f"- 来源标记：`{warning.source}`")
+        if warning.trust_level:
+            lines.append(f"- 可信度标记：`{warning.trust_level}`")
+        if warning.requires_human_review:
+            lines.append("- 人工复核：`required`")
+        if warning.reasoning.get("reasoning"):
+            lines.append("")
+            lines.append("LLM 未知风险推理：")
+            for step in warning.reasoning.get("reasoning", [])[:5]:
+                lines.append(f"- {step}")
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -122,7 +139,48 @@ def write_markdown(report: AuditReport, output_path: str | Path) -> Path:
 
 
 def report_to_dict(report: AuditReport) -> dict:
-    return asdict(report)
+    data = asdict(report)
+    data["findings"] = [enrich_finding(item) for item in data.get("findings", [])]
+    data["warnings"] = [enrich_warning(item) for item in data.get("warnings", [])]
+    return data
+
+
+def enrich_finding(finding: Dict[str, Any]) -> Dict[str, Any]:
+    item = dict(finding)
+    vulnerability_id = item.get("vulnerability_id")
+    verification_status = extract_verification_status(item.get("verification_plan") or {})
+    item["display_name"] = translate_vulnerability(vulnerability_id)
+    item["display_label"] = format_vulnerability_label(vulnerability_id)
+    item["final_status"] = item.get("status", "unknown")
+    item["final_status_display"] = translate_status(item["final_status"])
+    item["verification_status"] = verification_status
+    item["verification_status_display"] = translate_verification_status(verification_status)
+    item["severity_display"] = translate_severity(item.get("severity", ""))
+    item["location_text"] = f"{item.get('contract_name')}.{item.get('function_signature')}"
+    return item
+
+
+def enrich_warning(warning: Dict[str, Any]) -> Dict[str, Any]:
+    item = dict(warning)
+    vulnerability_id = item.get("target_vulnerability")
+    item["display_name"] = translate_vulnerability(vulnerability_id)
+    item["display_label"] = format_vulnerability_label(vulnerability_id)
+    item["final_status"] = item.get("status", "unknown")
+    item["final_status_display"] = translate_status(item["final_status"])
+    item["location_text"] = f"{item.get('contract_name')}.{item.get('function_signature')}"
+    item["is_llm_generated"] = item.get("source") == "LLM_GENERATED"
+    item["requires_human_review"] = bool(item.get("requires_human_review"))
+    return item
+
+
+def extract_verification_status(plan: Dict[str, Any]) -> str:
+    llm_status = (plan.get("llm_verification") or {}).get("status")
+    if llm_status:
+        return str(llm_status)
+    slither_status = (plan.get("slither") or {}).get("status")
+    if slither_status:
+        return str(slither_status)
+    return "not_requested"
 
 
 def format_vulnerability_label(vulnerability: str | None) -> str:
@@ -135,6 +193,8 @@ def format_vulnerability_label(vulnerability: str | None) -> str:
 
 def translate_vulnerability(vulnerability: str | None) -> str:
     canonical = normalize_vulnerability(vulnerability)
+    if canonical == "VULN_LLM_SEMANTIC_WARNING":
+        return "LLM generated unknown semantic risk"
     mapping = {
         "VULN_REENTRANCY": "重入漏洞",
         "VULN_TIMESTAMP": "时间戳依赖",
@@ -149,6 +209,8 @@ def translate_vulnerability(vulnerability: str | None) -> str:
 
 
 def translate_status(status: str) -> str:
+    if status == "llm_semantic_warning":
+        return "LLM generated unknown risk warning"
     mapping = {
         "suspected": "疑似",
         "confirmed": "已确认",
@@ -191,6 +253,8 @@ def translate_severity(severity: str) -> str:
 
 
 def translate_action(action: str | None) -> str:
+    if action == "review_llm_semantic_warning":
+        return "review LLM generated unknown risk"
     mapping = {
         "start_new_scan": "发起对应专项检测",
         "review_high_risk_function": "人工复核高风险函数",
