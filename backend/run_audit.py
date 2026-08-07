@@ -6,11 +6,16 @@ from contextlib import contextmanager
 from time import perf_counter
 from pathlib import Path
 
-from backend.analysis import analyze_project_components, summarize_contract_status
+from backend.analysis import (
+    analyze_project_components,
+    contract_component_map,
+    function_contract_map,
+    summarize_contract_status,
+)
 from backend.agents.reasoning_localization_agent import build_findings_and_warnings
 from backend.agents.slither_verification_agent import verify_report_with_slither
 from backend.evidence.evidence_center import EvidenceCenter
-from backend.function_risk.reasoning_gate import select_reasoning_targets
+from backend.function_risk.reasoning_gate import select_reasoning_targets_by_project
 from backend.function_risk.risk_score import compute_risk_vectors
 from backend.model_adapters import adapter_results_to_metadata, build_default_registry, execute_adapters
 from backend.preprocessing.feature_extractor import build_analysis_input
@@ -60,6 +65,8 @@ def run_audit(request: AuditRequest) -> AuditReport:
         analysis = build_analysis_input(request.task_id, sources, target_vulnerability=target)
     with timer.phase("project_grouping"):
         project_analysis = analyze_project_components(analysis.sources, analysis.contracts, analysis.call_graph)
+        function_contracts = function_contract_map(analysis.contracts)
+        contract_components = contract_component_map(project_analysis)
     with timer.phase("workflow_routing"):
         workflow = build_workflow(request, analysis)
 
@@ -79,7 +86,11 @@ def run_audit(request: AuditRequest) -> AuditReport:
             center.grouped(),
             selected_vulnerabilities=request.target_vulnerabilities,
         )
-        reasoning_selection = select_reasoning_targets(initial_risk_vectors)
+        reasoning_selection = select_reasoning_targets_by_project(
+            initial_risk_vectors,
+            function_contracts=function_contracts,
+            contract_components=contract_components,
+        )
 
     with timer.phase("knowledge_retrieval"):
         store = JsonlKnowledgeStore()
@@ -130,6 +141,10 @@ def run_audit(request: AuditRequest) -> AuditReport:
             "reasoning_gate": {
                 "max_candidates": reasoning_selection.max_candidates,
                 "selected_count": len(reasoning_selection.selected_function_ids),
+                "strategy": reasoning_selection.strategy,
+                "component_count": reasoning_selection.component_count,
+                "contract_count": reasoning_selection.contract_count,
+                "per_contract_top_k": reasoning_selection.per_contract_top_k,
                 "selected_function_ids": sorted(reasoning_selection.selected_function_ids),
                 "reasons": reasoning_selection.reasons,
             },

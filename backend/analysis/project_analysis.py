@@ -154,6 +154,23 @@ def summarize_contract_status(
     }
 
 
+def function_contract_map(contracts: List[ContractUnit]) -> Dict[str, str]:
+    return {
+        fn.function_id: contract_key(contract)
+        for contract in contracts
+        for fn in contract.functions
+    }
+
+
+def contract_component_map(project_analysis: Dict[str, Any]) -> Dict[str, str]:
+    result: Dict[str, str] = {}
+    for component in project_analysis.get("components", []):
+        component_id = str(component.get("component_id") or "")
+        for key in component.get("contracts", []):
+            result[str(key)] = component_id
+    return result
+
+
 def connected_components(contract_keys: List[str], edges: List[Dict[str, str]]) -> List[Dict[str, Any]]:
     graph: Dict[str, Set[str]] = {key: set() for key in contract_keys}
     edge_count_by_component: Dict[str, int] = defaultdict(int)
