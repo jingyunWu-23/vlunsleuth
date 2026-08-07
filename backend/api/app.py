@@ -428,6 +428,11 @@ def run_task(request: AuditRequest) -> None:
             "findings": len(report.findings),
             "warnings": len(report.warnings),
             "functions": len(report.risk_vectors),
+            "contracts": report.metadata.get("contracts"),
+            "normal_contracts": report.metadata.get("contract_statistics", {}).get("normal_contract_count"),
+            "abnormal_contracts": report.metadata.get("contract_statistics", {}).get("abnormal_contract_count"),
+            "project_components": report.metadata.get("project_analysis", {}).get("component_count"),
+            "isolated_contracts": report.metadata.get("project_analysis", {}).get("isolated_contract_count"),
             "evidence_count": report.metadata.get("evidence_count"),
             "model_counts": report.metadata.get("evidence_center", {}).get("model_counts", {}),
         }

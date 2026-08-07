@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from time import perf_counter
 from pathlib import Path
 
+from backend.analysis import analyze_project_components, summarize_contract_status
 from backend.agents.reasoning_localization_agent import build_findings_and_warnings
 from backend.agents.slither_verification_agent import verify_report_with_slither
 from backend.evidence.evidence_center import EvidenceCenter
@@ -57,6 +58,8 @@ def run_audit(request: AuditRequest) -> AuditReport:
     with timer.phase("preprocessing_and_feature_extraction"):
         target = request.target_vulnerabilities[0] if request.target_vulnerabilities else None
         analysis = build_analysis_input(request.task_id, sources, target_vulnerability=target)
+    with timer.phase("project_grouping"):
+        project_analysis = analyze_project_components(analysis.sources, analysis.contracts, analysis.call_graph)
     with timer.phase("workflow_routing"):
         workflow = build_workflow(request, analysis)
 
@@ -107,6 +110,8 @@ def run_audit(request: AuditRequest) -> AuditReport:
             reasoning_selection=reasoning_selection,
             knowledge_contexts=knowledge_contexts,
         )
+    with timer.phase("contract_statistics"):
+        contract_statistics = summarize_contract_status(analysis.contracts, risk_vectors, findings, warnings)
     report = AuditReport(
         task_id=request.task_id,
         mode=request.mode,
@@ -118,6 +123,8 @@ def run_audit(request: AuditRequest) -> AuditReport:
             "source_files": len(analysis.sources),
             "contracts": len(analysis.contracts),
             "functions": len(analysis.functions),
+            "project_analysis": project_analysis,
+            "contract_statistics": contract_statistics,
             "evidence_count": len(center.all()),
             "evidence_center": center.summary(),
             "reasoning_gate": {

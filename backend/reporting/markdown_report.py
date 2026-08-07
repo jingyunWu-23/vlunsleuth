@@ -28,6 +28,7 @@ def render_markdown(report: AuditReport) -> str:
         "| 排名 | 合约 | 函数 | 综合风险 | 静态特征 | 异常分 | GCN | 知识库 | 一致性 | 防护 |",
         "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
+    insert_project_summary(lines, report)
     for idx, vector in enumerate(report.risk_vectors[:20], 1):
         lines.append(
             f"| {idx} | {vector.contract_name} | `{vector.function_signature}` | "
@@ -92,6 +93,41 @@ def render_markdown(report: AuditReport) -> str:
                 lines.append(f"- {step}")
         lines.append("")
     return "\n".join(lines)
+
+
+def insert_project_summary(lines: list[str], report: AuditReport) -> None:
+    project = report.metadata.get("project_analysis", {})
+    stats = report.metadata.get("contract_statistics", {})
+    if not project and not stats:
+        return
+    summary = [
+        "",
+        "## Project Grouping And Contract Statistics",
+        "",
+        f"- Input contracts: `{stats.get('input_contract_count', report.metadata.get('contracts', 0))}`",
+        f"- Normal contracts: `{stats.get('normal_contract_count', 0)}`",
+        f"- Abnormal contracts: `{stats.get('abnormal_contract_count', 0)}`",
+        f"- Project components: `{project.get('component_count', 0)}`",
+        f"- Isolated contracts: `{project.get('isolated_contract_count', 0)}`",
+        f"- Relationship edges: `{project.get('edge_count', 0)}`",
+        "",
+    ]
+    components = project.get("components", [])
+    if components:
+        summary.extend([
+            "| Component | Contracts | Edges | Relations | Isolated |",
+            "|---|---:|---:|---|---|",
+        ])
+        for item in components[:20]:
+            relations = ", ".join(item.get("relations", [])) or "none"
+            summary.append(
+                f"| `{item.get('component_id')}` | {item.get('contract_count', 0)} | "
+                f"{item.get('edge_count', 0)} | `{relations}` | "
+                f"{'yes' if item.get('is_isolated') else 'no'} |"
+            )
+        summary.append("")
+    insert_at = next((idx for idx, line in enumerate(lines) if str(line).startswith("## ") and idx > 5), len(lines))
+    lines[insert_at:insert_at] = summary
 
 
 def append_reasoning(lines: list[str], finding) -> None:
