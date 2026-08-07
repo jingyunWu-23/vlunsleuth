@@ -21,7 +21,7 @@ from backend.model_adapters import adapter_results_to_metadata, build_default_re
 from backend.preprocessing.feature_extractor import build_analysis_input
 from backend.preprocessing.source_loader import load_sources
 from backend.rag.knowledge_context import build_knowledge_context
-from backend.rag.jsonl_knowledge_store import JsonlKnowledgeStore
+from backend.rag.store_factory import get_default_knowledge_store
 from backend.reporting.markdown_report import report_to_dict, write_markdown
 from backend.router.workflow_router import build_workflow
 from backend.schemas import AuditReport, AuditRequest
@@ -93,7 +93,7 @@ def run_audit(request: AuditRequest) -> AuditReport:
         )
 
     with timer.phase("knowledge_retrieval"):
-        store = JsonlKnowledgeStore()
+        store = get_default_knowledge_store()
         fn_by_id = {fn.function_id: fn for fn in analysis.functions}
         preliminary_vector_by_id = {vector.function_id: vector for vector in initial_risk_vectors}
         knowledge_contexts = {}
@@ -138,6 +138,11 @@ def run_audit(request: AuditRequest) -> AuditReport:
             "contract_statistics": contract_statistics,
             "evidence_count": len(center.all()),
             "evidence_center": center.summary(),
+            "rag_backend": {
+                "store": type(store).__name__,
+                "index_path": str(getattr(store, "index_path", "")),
+                "jsonl_path": str(getattr(store, "jsonl_path", "")),
+            },
             "reasoning_gate": {
                 "max_candidates": reasoning_selection.max_candidates,
                 "selected_count": len(reasoning_selection.selected_function_ids),

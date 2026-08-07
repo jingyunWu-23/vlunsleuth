@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from backend.rag.jsonl_knowledge_store import JsonlKnowledgeStore
 from backend.schemas import FunctionUnit, RiskVector
 
 
@@ -42,7 +41,7 @@ class KnowledgeContext:
 
 
 def build_knowledge_context(
-    store: JsonlKnowledgeStore,
+    store: Any,
     function: FunctionUnit,
     vector: RiskVector | None = None,
     top_k: int = 5,

@@ -109,7 +109,7 @@ class EvidenceCenter:
                     for item in knowledge_items[:5]
                 ],
             }],
-            metadata={"source": "dataset/knowledge/unified_multi_agent_knowledge.jsonl"},
+            metadata={"source": "rag_knowledge_store"},
         ))
 
     def by_function(self, function_id: str) -> List[ModelEvidence]:

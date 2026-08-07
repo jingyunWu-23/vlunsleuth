@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 from backend.agents.llm_unknown_risk_agent import LLMUnknownRiskAgent
 from backend.agents.llm_reasoning_service import LLMReasoningService
@@ -13,7 +13,7 @@ from backend.function_risk.risk_score import (
     static_category_score,
 )
 from backend.rag.knowledge_context import KnowledgeContext
-from backend.rag.jsonl_knowledge_store import JsonlKnowledgeStore
+from backend.rag.store_factory import get_default_knowledge_store
 from backend.schemas import Finding, FunctionUnit, ModelEvidence, RiskVector, Warning
 
 
@@ -21,7 +21,7 @@ def build_findings_and_warnings(
     functions: List[FunctionUnit],
     risk_vectors: List[RiskVector],
     evidence_by_function: Dict[str, List[ModelEvidence]],
-    store: JsonlKnowledgeStore | None = None,
+    store: Any | None = None,
     selected_vulnerabilities: List[str] | None = None,
     reasoning_selection: ReasoningSelection | None = None,
     knowledge_contexts: Dict[str, KnowledgeContext] | None = None,
@@ -32,7 +32,7 @@ def build_findings_and_warnings(
     fn_by_id = {fn.function_id: fn for fn in functions}
     findings: List[Finding] = []
     warnings: List[Warning] = []
-    store = store or JsonlKnowledgeStore()
+    store = store or get_default_knowledge_store()
     knowledge_contexts = knowledge_contexts or {}
     llm_service = llm_service or LLMReasoningService()
     unknown_risk_agent = unknown_risk_agent or LLMUnknownRiskAgent()
