@@ -1,0 +1,93 @@
+{
+  "model_type": "LSTM binary classifier",
+  "target": "locked_ether",
+  "model_path": "LG-DeepSVDD\\pretrain\\semantic features\\LSTM\\outputs\\slither_models_no_class_weight_20260703\\lstm_slither_locked_ether.h5",
+  "data_dir": "F:\\\u4fe1\u606f\u5b89\u5168\u4f5c\u54c1\u8d5b\\SCG\\dataset\\slither_lstm\\embedding",
+  "train_rows": 6626,
+  "validation_rows": 1169,
+  "test_rows": 1572,
+  "max_len": 500,
+  "vocab_size": 128,
+  "lstm_units": 128,
+  "dropout": 0.5,
+  "epochs": 20,
+  "batch_size": 128,
+  "class_weight": null,
+  "macro_f1": 0.6751321520770552,
+  "vulnerability_f1": 0.8782778864970646,
+  "vulnerability_precision": 0.8025751072961373,
+  "vulnerability_recall": 0.9697493517718236,
+  "confusion_matrix": [
+    [
+      139,
+      276
+    ],
+    [
+      35,
+      1122
+    ]
+  ],
+  "prediction_rule": "pred = 1 if vulnerability_probability >= calibrated_threshold else 0",
+  "calibrated_threshold": 0.5599999999999999,
+  "threshold_selection": {
+    "split": "validation",
+    "optimized_metric": "f1",
+    "validation": {
+      "threshold": 0.5599999999999999,
+      "precision": 0.8267326732673267,
+      "recall": 0.9619815668202765,
+      "f1": 0.8892438764643238,
+      "macro_f1": 0.7185349817104227,
+      "predicted_positive": 1010,
+      "support_positive": 868,
+      "confusion_matrix": [
+        [
+          126,
+          175
+        ],
+        [
+          33,
+          835
+        ]
+      ]
+    },
+    "test_at_calibrated_threshold": {
+      "threshold": 0.5599999999999999,
+      "precision": 0.8168389955686853,
+      "recall": 0.9559204840103717,
+      "f1": 0.8809239346873755,
+      "macro_f1": 0.7042850321146199,
+      "predicted_positive": 1354,
+      "support_positive": 1157,
+      "confusion_matrix": [
+        [
+          167,
+          248
+        ],
+        [
+          51,
+          1106
+        ]
+      ]
+    },
+    "test_at_default_threshold_0_5": {
+      "threshold": 0.5,
+      "precision": 0.8025751072961373,
+      "recall": 0.9697493517718236,
+      "f1": 0.8782778864970646,
+      "macro_f1": 0.6751321520770552,
+      "predicted_positive": 1398,
+      "support_positive": 1157,
+      "confusion_matrix": [
+        [
+          139,
+          276
+        ],
+        [
+          35,
+          1122
+        ]
+      ]
+    }
+  }
+}

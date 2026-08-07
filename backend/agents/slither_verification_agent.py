@@ -38,6 +38,17 @@ DETECTOR_TO_VULN = {
     "delegatecall-loop": "VULN_DELEGATECALL",
     "unchecked-lowlevel": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
     "unchecked-send": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "arbitrary-send-erc20": "VULN_ACCESS_CONTROL",
+    "arbitrary-send-erc20-permit": "VULN_ACCESS_CONTROL",
+    "arbitrary-send-eth": "VULN_ACCESS_CONTROL",
+    "protected-vars": "VULN_ACCESS_CONTROL",
+    "suicidal": "VULN_ACCESS_CONTROL",
+    "tx-origin": "VULN_ACCESS_CONTROL",
+    "divide-before-multiply": "VULN_ARITHMETIC",
+    "incorrect-exp": "VULN_ARITHMETIC",
+    "locked-ether": "VULN_LOCKED_ETHER",
+    "weak-prng": "VULN_BAD_RANDOMNESS",
+    "bad-prng": "VULN_BAD_RANDOMNESS",
 }
 
 VERIFICATION_SYSTEM_PROMPT = """你是智能合约安全验证智能体。你可以使用 Slither 工具结果、候选漏洞、函数源码和模型证据来判断候选漏洞是否被验证支持。
@@ -553,7 +564,7 @@ def build_local_verification_result(
             "model_api_status": f"fallback: {type(exc).__name__}: {exc}",
         }
     if slither_result.get("status") == "completed":
-        semantic_reason = local_semantic_rejection_reason(finding, function)
+        semantic_reason = extended_semantic_rejection_reason(finding, function)
         if semantic_reason:
             return {
                 "status": "rejected",
@@ -597,6 +608,25 @@ def local_semantic_rejection_reason(finding: Finding, function: FunctionUnit | N
     if vuln == "VULN_UNCHECKED_LOW_LEVEL_CALLS" and not function.features.get("unchecked_low_level_call"):
         return "函数没有未检查返回值的低级调用。"
     return ""
+
+
+def extended_semantic_rejection_reason(finding: Finding, function: FunctionUnit | None) -> str:
+    if function is None:
+        return ""
+    dangerous = set(function.features.get("dangerous_apis", []))
+    vuln = normalize_vulnerability(finding.vulnerability_id)
+    if vuln == "VULN_ACCESS_CONTROL" and not (
+        function.features.get("state_update")
+        or dangerous.intersection({"selfdestruct", "delegatecall", "low_level_call", "send", "transfer"})
+    ):
+        return "function has no sensitive state update or privileged external operation."
+    if vuln == "VULN_ARITHMETIC" and not function.features.get("arithmetic_op"):
+        return "function has no arithmetic operation."
+    if vuln == "VULN_LOCKED_ETHER" and not (function.features.get("payable") or "msg.value" in function.code):
+        return "function does not receive ETH."
+    if vuln == "VULN_BAD_RANDOMNESS" and not function.features.get("randomness_source"):
+        return "function has no chain-derived randomness source."
+    return local_semantic_rejection_reason(finding, function)
 
 
 def normalize_verification_result(result: Dict[str, Any]) -> Dict[str, Any]:

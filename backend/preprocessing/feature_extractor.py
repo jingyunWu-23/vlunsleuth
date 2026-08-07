@@ -17,6 +17,9 @@ DANGEROUS_PATTERNS = {
     "selfdestruct": r"\bselfdestruct\s*\(",
     "tx_origin": r"\btx\.origin\b",
     "timestamp": r"\bblock\.timestamp\b|\bnow\b",
+    "blockhash": r"\bblockhash\s*\(",
+    "prevrandao": r"\bblock\.prevrandao\b|\bblock\.difficulty\b",
+    "coinbase": r"\bblock\.coinbase\b",
 }
 TOKEN_RE = re.compile(r"0x[0-9A-Fa-f]+|\d+|[A-Za-z_][A-Za-z0-9_]*|==|!=|<=|>=|&&|\|\||=>|[{}()\[\].,;:+\-*/%<>=!]")
 STATE_UPDATE_RE = re.compile(r"(\+\+|--|\+=|-=|\*=|/=|%=|(?<![=!<>])=(?!=))")
@@ -85,6 +88,9 @@ def extract_static_features(fn: FunctionUnit) -> Dict[str, object]:
     unchecked_low_level_call = has_unchecked_low_level_call(searchable)
     external_before_state_update = has_external_before_state_update(searchable)
     loop_external_call = has_loop_external_call(searchable)
+    arithmetic_op = has_arithmetic_operation(searchable)
+    randomness_source = any(item in dangerous for item in ("timestamp", "blockhash", "prevrandao", "coinbase"))
+    payable = "payable" in fn.signature.lower() or re.search(r"\bpayable\b", searchable) is not None
     static_score = saturating_score([
         0.30 if external_interaction else 0.0,
         0.25 if state_update and external_interaction else 0.0,
@@ -95,6 +101,8 @@ def extract_static_features(fn: FunctionUnit) -> Dict[str, object]:
         0.20 if unchecked_low_level_call else 0.0,
         0.20 if external_before_state_update else 0.0,
         0.20 if loop_external_call else 0.0,
+        0.15 if randomness_source else 0.0,
+        0.10 if arithmetic_op else 0.0,
     ])
     business_score = business_sensitivity(fn, asset_terms)
     protection_score = min(1.0, len(protection_terms) * 0.18)
@@ -107,6 +115,9 @@ def extract_static_features(fn: FunctionUnit) -> Dict[str, object]:
         "unchecked_low_level_call": unchecked_low_level_call,
         "external_before_state_update": external_before_state_update,
         "loop_external_call": loop_external_call,
+        "arithmetic_op": arithmetic_op,
+        "randomness_source": randomness_source,
+        "payable": payable,
         "external_calls": fn.external_calls,
         "internal_calls": fn.internal_calls,
         "critical_statements": critical_statements,
@@ -226,3 +237,7 @@ def has_loop_external_call(code: str) -> bool:
     loop_match = re.search(r"\b(for|while)\s*\(", code)
     external_match = re.search(r"\.(?:call|delegatecall|staticcall|send|transfer)(?:\s*\{[^}]*\})?\s*\(", code)
     return bool(loop_match and external_match and loop_match.start() < external_match.start())
+
+
+def has_arithmetic_operation(code: str) -> bool:
+    return bool(re.search(r"(?<![A-Za-z0-9_])(?:\+\+|--|\+=|-=|\*=|/=|%=|\+|-|\*|/|%)(?![A-Za-z0-9_])", code))

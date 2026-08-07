@@ -158,6 +158,10 @@ def first_repair_strategy(knowledge_context: Dict[str, Any], vulnerability: str 
         "VULN_TIMESTAMP": "避免将 block.timestamp 作为关键决策来源；如确需时间条件，应使用更安全的时间窗口或可信预言机。",
         "VULN_DELEGATECALL": "避免对不可信目标执行 delegatecall，并通过严格访问控制和白名单限制升级或插件目标。",
         "VULN_UNCHECKED_LOW_LEVEL_CALLS": "检查低级调用返回值，并使用 require(success) 失败即回滚。",
+        "VULN_ACCESS_CONTROL": "为敏感状态修改、资产转移、升级和销毁函数增加明确访问控制，例如 onlyOwner、角色权限或多签审批。",
+        "VULN_ARITHMETIC": "检查算术边界和精度假设；低版本 Solidity 应使用 SafeMath，高版本仍需验证除法、舍入和溢出前置条件。",
+        "VULN_LOCKED_ETHER": "确认合约接收 ETH 后存在受控提款或救援路径，并限制不可预期的强制转账影响。",
+        "VULN_BAD_RANDOMNESS": "不要使用 block.timestamp、blockhash、prevrandao 等链上可预测数据直接生成关键随机数；改用 commit-reveal 或可信 VRF。",
         "VULN_CROSS_CONTRACT_RISK": "复核跨合约信任边界、目标地址可控性和调用链状态依赖。",
         "VULN_UNKNOWN_ANOMALY": "人工复核异常代码路径，并围绕高风险控制流和资产流添加针对性回归测试。",
     }

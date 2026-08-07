@@ -1,0 +1,52 @@
+{
+  "name": "selected_slither_lstm_deployable_models",
+  "created_at": "2026-07-03",
+  "label_definition": {
+    "0": "normal / negative",
+    "1": "vulnerable / positive"
+  },
+  "input": {
+    "type": "opcode_token_ids",
+    "max_len": 500,
+    "vocab_size": 128,
+    "prediction_rule": "pred = 1 if vulnerability_probability >= threshold else 0"
+  },
+  "models": {
+    "access_control": {
+      "model_file": "lstm_slither_access_control.h5",
+      "meta_file": "lstm_slither_access_control_meta.json",
+      "source_dir": "slither_models_no_class_weight_20260703",
+      "threshold": 0.76,
+      "test_macro_f1": 0.7737,
+      "test_vulnerability_f1": 0.7014,
+      "recommendation": "use"
+    },
+    "arithmetic": {
+      "model_file": "lstm_slither_arithmetic.h5",
+      "meta_file": "lstm_slither_arithmetic_meta.json",
+      "source_dir": "slither_models_baseline_calibrated_20260703_2103",
+      "threshold": 0.43,
+      "test_macro_f1": 0.7494,
+      "test_vulnerability_f1": 0.7061,
+      "recommendation": "use"
+    },
+    "locked_ether": {
+      "model_file": "lstm_slither_locked_ether.h5",
+      "meta_file": "lstm_slither_locked_ether_meta.json",
+      "source_dir": "slither_models_no_class_weight_20260703",
+      "threshold": 0.56,
+      "test_macro_f1": 0.7043,
+      "test_vulnerability_f1": 0.8809,
+      "recommendation": "use"
+    },
+    "bad_randomness": {
+      "model_file": "lstm_slither_bad_randomness.h5",
+      "meta_file": "lstm_slither_bad_randomness_meta.json",
+      "source_dir": "slither_models_no_class_weight_20260703",
+      "threshold": 0.43,
+      "test_macro_f1": 0.8133,
+      "test_vulnerability_f1": 0.8291,
+      "recommendation": "use"
+    }
+  }
+}

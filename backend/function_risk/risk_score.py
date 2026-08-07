@@ -11,15 +11,23 @@ DEFAULT_WARNING_CATEGORIES = [
     "VULN_TIMESTAMP",
     "VULN_DELEGATECALL",
     "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "VULN_ACCESS_CONTROL",
+    "VULN_ARITHMETIC",
+    "VULN_LOCKED_ETHER",
+    "VULN_BAD_RANDOMNESS",
     "VULN_CROSS_CONTRACT_RISK",
     "VULN_UNKNOWN_ANOMALY",
 ]
 
 SWC_TO_VULN = {
+    "SWC-101": "VULN_ARITHMETIC",
     "SWC-104": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "SWC-105": "VULN_ACCESS_CONTROL",
+    "SWC-106": "VULN_ACCESS_CONTROL",
     "SWC-107": "VULN_REENTRANCY",
     "SWC-112": "VULN_DELEGATECALL",
     "SWC-116": "VULN_TIMESTAMP",
+    "SWC-120": "VULN_BAD_RANDOMNESS",
 }
 
 VULN_ALIASES = {
@@ -37,6 +45,22 @@ VULN_ALIASES = {
     "unchecked-low-level-calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
     "lstm_unchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
     "lstm_sbunchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "access_control": "VULN_ACCESS_CONTROL",
+    "access-control": "VULN_ACCESS_CONTROL",
+    "lstm_access_control": "VULN_ACCESS_CONTROL",
+    "arithmetic": "VULN_ARITHMETIC",
+    "integer_arithmetic": "VULN_ARITHMETIC",
+    "integer overflow": "VULN_ARITHMETIC",
+    "integer-overflow": "VULN_ARITHMETIC",
+    "lstm_arithmetic": "VULN_ARITHMETIC",
+    "locked_ether": "VULN_LOCKED_ETHER",
+    "locked-ether": "VULN_LOCKED_ETHER",
+    "lstm_locked_ether": "VULN_LOCKED_ETHER",
+    "bad_randomness": "VULN_BAD_RANDOMNESS",
+    "bad-randomness": "VULN_BAD_RANDOMNESS",
+    "weak_randomness": "VULN_BAD_RANDOMNESS",
+    "weak randomness": "VULN_BAD_RANDOMNESS",
+    "lstm_bad_randomness": "VULN_BAD_RANDOMNESS",
     "gcn": "VULN_CROSS_CONTRACT_RISK",
     "cross_contract": "VULN_CROSS_CONTRACT_RISK",
     "cross_contract_risk": "VULN_CROSS_CONTRACT_RISK",
@@ -233,6 +257,25 @@ def static_category_score(fn: FunctionUnit, category: str) -> float:
             score = max(score, 0.85)
         elif "low_level_call" in dangerous:
             score = max(score, 0.45)
+    elif category == "VULN_ACCESS_CONTROL":
+        sensitive = fn.features.get("state_update") or dangerous.intersection({"selfdestruct", "delegatecall", "low_level_call", "transfer", "send"})
+        if sensitive and not fn.features.get("access_check"):
+            score = max(score, 0.8)
+        elif sensitive:
+            score = max(score, 0.35)
+    elif category == "VULN_ARITHMETIC":
+        if fn.features.get("arithmetic_op"):
+            score = max(score, 0.65)
+    elif category == "VULN_LOCKED_ETHER":
+        receives_value = fn.features.get("payable") or "msg.value" in fn.code
+        can_release = dangerous.intersection({"low_level_call", "send", "transfer", "selfdestruct"}) or "withdraw" in fn.name.lower()
+        if receives_value and not can_release:
+            score = max(score, 0.75)
+        elif receives_value:
+            score = max(score, 0.3)
+    elif category == "VULN_BAD_RANDOMNESS":
+        if fn.features.get("randomness_source"):
+            score = max(score, 0.85)
     elif category == "VULN_CROSS_CONTRACT_RISK":
         if dangerous.intersection({"delegatecall", "low_level_call", "send", "transfer"}):
             score = max(score, 0.65)
@@ -259,6 +302,8 @@ def category_protection_score(fn: FunctionUnit, category: str) -> float:
         return max(base, 0.8)
     if category in {"VULN_REENTRANCY", "VULN_UNCHECKED_LOW_LEVEL_CALLS"} and "require(" in terms:
         return max(base, 0.35)
+    if category == "VULN_ACCESS_CONTROL" and ({"onlyOwner", "hasRole"} & terms or fn.features.get("access_check")):
+        return max(base, 0.6)
     return base
 
 
@@ -313,6 +358,15 @@ def semantic_category_allowed(fn: FunctionUnit, category: str) -> bool:
         return "timestamp" in dangerous
     if category == "VULN_DELEGATECALL":
         return (not read_only) and "delegatecall" in dangerous
+    if category == "VULN_ACCESS_CONTROL":
+        sensitive = has_state_update or bool(dangerous.intersection({"selfdestruct", "delegatecall", "low_level_call", "send", "transfer"}))
+        return (not read_only) and sensitive
+    if category == "VULN_ARITHMETIC":
+        return bool(fn.features.get("arithmetic_op"))
+    if category == "VULN_LOCKED_ETHER":
+        return bool(fn.features.get("payable") or "msg.value" in fn.code)
+    if category == "VULN_BAD_RANDOMNESS":
+        return bool(fn.features.get("randomness_source"))
     if category == "VULN_CROSS_CONTRACT_RISK":
         return has_external or bool(fn.external_calls)
     return True
@@ -401,6 +455,10 @@ def static_or_unknown(category: str) -> bool:
         "VULN_TIMESTAMP",
         "VULN_DELEGATECALL",
         "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+        "VULN_ACCESS_CONTROL",
+        "VULN_ARITHMETIC",
+        "VULN_LOCKED_ETHER",
+        "VULN_BAD_RANDOMNESS",
         "VULN_CROSS_CONTRACT_RISK",
         "VULN_UNKNOWN_ANOMALY",
     }

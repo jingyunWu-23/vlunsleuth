@@ -14,6 +14,10 @@ LSTM_VULNERABILITIES = {
     "timestamp": "VULN_TIMESTAMP",
     "delegatecall": "VULN_DELEGATECALL",
     "SBunchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "access_control": "VULN_ACCESS_CONTROL",
+    "arithmetic": "VULN_ARITHMETIC",
+    "locked_ether": "VULN_LOCKED_ETHER",
+    "bad_randomness": "VULN_BAD_RANDOMNESS",
 }
 
 LSTM_MODEL_IDS = {
@@ -21,6 +25,10 @@ LSTM_MODEL_IDS = {
     "timestamp": "LSTM_TIMESTAMP",
     "delegatecall": "LSTM_DELEGATECALL",
     "SBunchecked_low_level_calls": "LSTM_UNCHECKED_LOW_LEVEL_CALLS",
+    "access_control": "LSTM_ACCESS_CONTROL",
+    "arithmetic": "LSTM_ARITHMETIC",
+    "locked_ether": "LSTM_LOCKED_ETHER",
+    "bad_randomness": "LSTM_BAD_RANDOMNESS",
 }
 
 LSTM_MODEL_FILES = {
@@ -28,6 +36,21 @@ LSTM_MODEL_FILES = {
     "timestamp": "lstm_scg_timestamp_gen1000.h5",
     "delegatecall": "lstm_scg_delegatecall_gen0.h5",
     "SBunchecked_low_level_calls": "lstm_scg_SBunchecked_low_level_calls_gen1000.h5",
+    "access_control": "lstm_slither_access_control.h5",
+    "arithmetic": "lstm_slither_arithmetic.h5",
+    "locked_ether": "lstm_slither_locked_ether.h5",
+    "bad_randomness": "lstm_slither_bad_randomness.h5",
+}
+
+LSTM_THRESHOLDS = {
+    "reentrancy": 0.55,
+    "timestamp": 0.55,
+    "delegatecall": 0.55,
+    "SBunchecked_low_level_calls": 0.55,
+    "access_control": 0.76,
+    "arithmetic": 0.43,
+    "locked_ether": 0.56,
+    "bad_randomness": 0.43,
 }
 
 
@@ -47,6 +70,10 @@ class LSTMAdapter(DetectionModel):
         "LSTM_TIMESTAMP",
         "LSTM_DELEGATECALL",
         "LSTM_UNCHECKED_LOW_LEVEL_CALLS",
+        "LSTM_ACCESS_CONTROL",
+        "LSTM_ARITHMETIC",
+        "LSTM_LOCKED_ETHER",
+        "LSTM_BAD_RANDOMNESS",
     ]
 
     def __init__(
@@ -84,8 +111,10 @@ class LSTMAdapter(DetectionModel):
         for fn in analysis.functions:
             for vulnerability in self.target_vulnerabilities:
                 canonical = normalize_vulnerability(vulnerability)
-                score, inference_metadata = self._predict_or_fallback(fn, canonical)
-                if score <= 0.05:
+                raw_score, inference_metadata = self._predict_or_fallback(fn, canonical)
+                threshold = model_threshold(canonical)
+                confidence = calibrated_confidence(raw_score, threshold)
+                if confidence <= 0.05:
                     continue
                 evidences.append(ModelEvidence(
                     evidence_id=f"{analysis.task_id}-lstm-{canonical}-{abs(hash(fn.function_id))}",
@@ -95,9 +124,9 @@ class LSTMAdapter(DetectionModel):
                     function_signature=fn.signature,
                     function_id=fn.function_id,
                     vulnerability_id=LSTM_VULNERABILITIES.get(canonical, canonical),
-                    raw_score=score,
-                    calibrated_confidence=score,
-                    label="vulnerable" if score >= 0.55 else "suspicious",
+                    raw_score=raw_score,
+                    calibrated_confidence=confidence,
+                    label="vulnerable" if raw_score >= threshold else "suspicious",
                     location_candidates=[{"start_line": fn.start_line, "end_line": fn.end_line}],
                     feature_evidence=[{
                         "type": inference_metadata.get("feature_type", "lstm_input"),
@@ -107,6 +136,7 @@ class LSTMAdapter(DetectionModel):
                         "adapter_mode": inference_metadata.get("adapter_mode"),
                         "h5_model": str(self.model_paths.get(canonical, "")),
                         "tokenizer_path": str(self.tokenizer_path) if self.tokenizer_path else None,
+                        "threshold": threshold,
                         "inference": inference_metadata,
                     },
                 ))
@@ -116,9 +146,10 @@ class LSTMAdapter(DetectionModel):
         base = self.model_dir or default_model_dir()
         paths: Dict[str, Path] = {}
         for key, filename in LSTM_MODEL_FILES.items():
-            path = base / filename
-            if path.exists():
-                paths[key] = path
+            for path in candidate_model_paths(base, filename):
+                if path.exists():
+                    paths[key] = path
+                    break
         return paths
 
     def _predict_or_fallback(self, fn: FunctionUnit, vulnerability: str) -> Tuple[float, Dict[str, object]]:
@@ -242,6 +273,18 @@ class LSTMAdapter(DetectionModel):
             has_call = "low_level_call" in dangerous
             checked = "require(" in code or "success" in code or "assert(" in code
             return clamp(0.70 if has_call and not checked else 0.20 if has_call else 0.0)
+        if vulnerability == "access_control":
+            sensitive = fn.features.get("state_update") or dangerous.intersection({"selfdestruct", "delegatecall", "low_level_call", "transfer"})
+            protected = fn.features.get("access_check") or "onlyowner" in code or "hasrole" in code
+            return clamp(0.72 if sensitive and not protected else 0.25 if sensitive else 0.0)
+        if vulnerability == "arithmetic":
+            return clamp(0.68 if fn.features.get("arithmetic_op") else 0.0)
+        if vulnerability == "locked_ether":
+            receives_value = fn.features.get("payable") or "msg.value" in code or fn.name.lower() in {"receive", "fallback"}
+            can_withdraw = dangerous.intersection({"transfer", "send", "low_level_call"}) or "withdraw" in code
+            return clamp(0.70 if receives_value and not can_withdraw else 0.20 if receives_value else 0.0)
+        if vulnerability == "bad_randomness":
+            return clamp(0.78 if fn.features.get("randomness_source") else 0.0)
         return 0.0
 
 
@@ -251,14 +294,28 @@ def normalize_vulnerability(vulnerability: str) -> str:
         "VULN_TIMESTAMP": "timestamp",
         "VULN_DELEGATECALL": "delegatecall",
         "VULN_UNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
+        "VULN_ACCESS_CONTROL": "access_control",
+        "VULN_ARITHMETIC": "arithmetic",
+        "VULN_LOCKED_ETHER": "locked_ether",
+        "VULN_BAD_RANDOMNESS": "bad_randomness",
         "LSTM_REENTRANCY": "reentrancy",
         "LSTM_TIMESTAMP": "timestamp",
         "LSTM_DELEGATECALL": "delegatecall",
         "LSTM_UNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
+        "LSTM_ACCESS_CONTROL": "access_control",
+        "LSTM_ARITHMETIC": "arithmetic",
+        "LSTM_LOCKED_ETHER": "locked_ether",
+        "LSTM_BAD_RANDOMNESS": "bad_randomness",
         "LSTM_SBUNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
         "unchecked_low_level_calls": "SBunchecked_low_level_calls",
         "unchecked-low-level-calls": "SBunchecked_low_level_calls",
         "unchecked low level calls": "SBunchecked_low_level_calls",
+        "integer_arithmetic": "arithmetic",
+        "integer-overflow": "arithmetic",
+        "integer overflow": "arithmetic",
+        "bad-randomness": "bad_randomness",
+        "weak_randomness": "bad_randomness",
+        "locked-ether": "locked_ether",
     }
     if vulnerability in mapping:
         return mapping[vulnerability]
@@ -269,6 +326,28 @@ def normalize_vulnerability(vulnerability: str) -> str:
 
 def clamp(value: float) -> float:
     return round(max(0.0, min(1.0, value)), 4)
+
+
+def model_threshold(vulnerability: str) -> float:
+    return LSTM_THRESHOLDS.get(vulnerability, 0.55)
+
+
+def calibrated_confidence(probability: float, threshold: float) -> float:
+    probability = clamp(probability)
+    if probability >= threshold:
+        if threshold >= 1.0:
+            return probability
+        return clamp(0.55 + 0.45 * ((probability - threshold) / (1.0 - threshold)))
+    if threshold <= 0.0:
+        return probability
+    return clamp(0.54 * (probability / threshold))
+
+
+def candidate_model_paths(base: Path, filename: str) -> List[Path]:
+    return [
+        base / filename,
+        base / "slither_models_deployable_selected" / filename,
+    ]
 
 
 def default_model_dir() -> Path:
