@@ -26,6 +26,7 @@ class RiskVector:
     function_id: str
     contract_name: str
     function_signature: str
+    lstm_score: float = 0.0
     anomaly_score: float = 0.0
     gcn_score: float = 0.0
     static_score: float = 0.0

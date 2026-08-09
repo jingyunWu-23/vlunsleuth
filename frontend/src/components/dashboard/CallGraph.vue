@@ -212,16 +212,18 @@ onMounted(() => {
   chartInstance.value.setOption(buildOption(props.data))
 
   // Click handler → emit node click
-  chartInstance.value.on('click', (params: { data?: { _raw?: CallGraphNode } }) => {
-    if (params.data?._raw) {
-      emit('nodeClick', params.data._raw)
+  chartInstance.value.on('click', (params) => {
+    const data = params.data as { _raw?: CallGraphNode } | null | undefined
+    if (data?._raw) {
+      emit('nodeClick', data._raw)
     }
   })
 
   // Mouseover on edge → emit edge hover
-  chartInstance.value.on('mouseover', (params: { dataType?: string; data?: { _raw?: CallGraphEdge } }) => {
-    if (params.dataType === 'edge' && params.data?._raw) {
-      emit('edgeHover', params.data._raw)
+  chartInstance.value.on('mouseover', (params) => {
+    const data = params.data as { _raw?: CallGraphEdge } | null | undefined
+    if (params.dataType === 'edge' && data?._raw) {
+      emit('edgeHover', data._raw)
     }
   })
 

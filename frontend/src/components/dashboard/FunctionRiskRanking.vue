@@ -13,7 +13,7 @@ const emit = defineEmits<{
 
 // --- State ---
 const selectedId = ref<string | null>(null)
-const sortKey = ref<'r_func' | 'anomaly_score' | 'gcn_score' | 'static_score' | 'business_score' | 'knowledge_score' | 'consistency_score'>('r_func')
+const sortKey = ref<'r_func' | 'lstm_score' | 'anomaly_score' | 'gcn_score' | 'static_score' | 'business_score' | 'knowledge_score' | 'consistency_score'>('r_func')
 const sortDir = ref<-1 | 1>(-1)
 const chartRef = ref<HTMLDivElement>()
 let chartInstance: echarts.ECharts | null = null
@@ -30,12 +30,13 @@ interface DimDef {
 }
 
 const dimensions: DimDef[] = [
-  { key: 'anomaly_score',      label: '异常分 (Aₐ)',        symbol: 'Aₐ', weight: 0.25, weightSign: '+', color: '#f85149' },
-  { key: 'gcn_score',          label: 'GCN分 (Gₐ)',        symbol: 'Gₐ', weight: 0.15, weightSign: '+', color: '#a371f7' },
-  { key: 'static_score',       label: '静态分 (Sₐ)',        symbol: 'Sₐ', weight: 0.20, weightSign: '+', color: '#d2991d' },
-  { key: 'business_score',     label: '业务敏感度 (Bₐ)',    symbol: 'Bₐ', weight: 0.15, weightSign: '+', color: '#3fb950' },
-  { key: 'knowledge_score',    label: '知识库匹配 (Kₐ)',    symbol: 'Kₐ', weight: 0.15, weightSign: '+', color: '#39d2c0' },
-  { key: 'consistency_score',  label: '多源一致性 (Cₐ)',    symbol: 'Cₐ', weight: 0.10, weightSign: '+', color: '#58a6ff' },
+  { key: 'lstm_score',         label: 'LSTM已知漏洞 (L_f)', symbol: 'L_f', weight: 0.25, weightSign: '+', color: '#ff7b72' },
+  { key: 'anomaly_score',      label: 'DeepSVDD异常 (A_f)', symbol: 'A_f', weight: 0.20, weightSign: '+', color: '#f85149' },
+  { key: 'gcn_score',          label: 'GCN分 (G_f)',        symbol: 'G_f', weight: 0.15, weightSign: '+', color: '#a371f7' },
+  { key: 'static_score',       label: '静态分 (S_f)',        symbol: 'S_f', weight: 0.20, weightSign: '+', color: '#d2991d' },
+  { key: 'business_score',     label: '业务敏感度 (B_f)',    symbol: 'B_f', weight: 0.10, weightSign: '+', color: '#3fb950' },
+  { key: 'knowledge_score',    label: '知识库匹配 (K_f)',    symbol: 'K_f', weight: 0.10, weightSign: '+', color: '#39d2c0' },
+  { key: 'consistency_score',  label: '多源一致性 (C_f)',    symbol: 'C_f', weight: 0.10, weightSign: '+', color: '#58a6ff' },
 ]
 
 // Secondary dimension shown outside the radar
@@ -67,10 +68,9 @@ const selectedVector = computed<RiskVector | null>(() => {
 
 // --- Risk level helpers ---
 function riskLevel(r: number): { label: string; color: string; bg: string } {
-  if (r >= 0.7) return { label: '严重', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' }
-  if (r >= 0.45) return { label: '高',  color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20' }
-  if (r >= 0.35) return { label: '中',  color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20' }
-  return { label: '低', color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20' }
+  if (r >= 0.7) return { label: '高', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' }
+  if (r >= 0.45) return { label: '中', color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20' }
+  return { label: '低', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20' }
 }
 
 function severityFromRFunc(r: number): Severity {
@@ -83,9 +83,13 @@ function severityFromRFunc(r: number): Severity {
 const formulaBreakdown = computed(() => {
   const v = selectedVector.value
   if (!v) return null
-  const positiveSum = dimensions.reduce((s, d) => s + (v[d.key] as number) * d.weight, 0)
+  const activeDimensions = dimensions.filter((d) => (v[d.key] as number) > 0)
+  const activeWeightSum = activeDimensions.reduce((s, d) => s + d.weight, 0)
+  const positiveSum = activeDimensions.reduce((s, d) => s + (v[d.key] as number) * d.weight, 0)
+  const normalizedRisk = activeWeightSum > 0 ? positiveSum / activeWeightSum : 0
   const protectionTerm = (v.protection_score as number) * protectionDim.weight
-  return { positiveSum, protectionTerm, rFunc: positiveSum - protectionTerm }
+  const rFunc = Math.max(0, Math.min(1, normalizedRisk - protectionTerm))
+  return { activeWeightSum, positiveSum, normalizedRisk, protectionTerm, rFunc }
 })
 
 // --- ECharts ---
@@ -192,8 +196,8 @@ function buildRadarOption(rv: RiskVector | null) {
     max: 1,
   }))
 
-  // 提取当前选中的函数在所有 6 个维度上的分数
-  const values = rv ? dimensions.map((d) => rv[d.key] as number) : [0, 0, 0, 0, 0, 0]
+  // 提取当前选中的函数在所有维度上的分数
+  const values = rv ? dimensions.map((d) => rv[d.key] as number) : dimensions.map(() => 0)
 
   return {
     backgroundColor: 'transparent',
@@ -342,10 +346,12 @@ defineExpose({ resetView })
         <div class="flex flex-wrap items-center gap-x-1 gap-y-0.5 font-mono text-xs">
           <span class="text-white">R_func</span>
           <span class="text-gray-600">=</span>
+          <span class="text-gray-600">(</span>
           <template v-for="(d, i) in dimensions" :key="d.key">
             <span v-if="i > 0" class="text-gray-600">+</span>
             <span :style="{ color: d.color }">{{ d.weight.toFixed(2) }}&times;{{ d.symbol }}</span>
           </template>
+          <span class="text-gray-600">) / W_active</span>
           <span class="text-gray-600">-</span>
           <span class="text-gray-500">{{ protectionDim.weight.toFixed(2) }}&times;{{ protectionDim.symbol }}</span>
         </div>
@@ -393,8 +399,7 @@ defineExpose({ resetView })
                   :class="{
                     'text-red-400 font-semibold': rv.r_func >= 0.7,
                     'text-orange-400': rv.r_func >= 0.45 && rv.r_func < 0.7,
-                    'text-yellow-400': rv.r_func >= 0.35 && rv.r_func < 0.45,
-                    'text-green-400': rv.r_func < 0.35,
+                    'text-yellow-400': rv.r_func < 0.45,
                   }"
                 >
                   {{ rv.r_func.toFixed(2) }}
@@ -468,8 +473,18 @@ defineExpose({ resetView })
 
         <div class="flex items-center gap-3 mt-3 pt-3 border-t border-[#21262d]">
           <div class="flex-1 text-right text-xs">
-            <span class="text-gray-500">正向加权和</span>
+            <span class="text-gray-500">正向有效加权和</span>
             <span class="text-gray-300 font-mono ml-2">{{ formulaBreakdown.positiveSum.toFixed(4) }}</span>
+          </div>
+          <span class="text-gray-600">/</span>
+          <div class="text-xs">
+            <span class="text-gray-500">有效权重和</span>
+            <span class="text-gray-300 font-mono ml-2">{{ formulaBreakdown.activeWeightSum.toFixed(2) }}</span>
+          </div>
+          <span class="text-gray-600">=</span>
+          <div class="text-xs">
+            <span class="text-gray-500">归一化风险</span>
+            <span class="text-gray-300 font-mono ml-2">{{ formulaBreakdown.normalizedRisk.toFixed(4) }}</span>
           </div>
           <span class="text-gray-600">-</span>
           <div class="text-xs">

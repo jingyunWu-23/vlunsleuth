@@ -23,11 +23,8 @@ const modeLabels: Record<AuditMode, string> = {
   cross_contract_scan: '跨合约专项扫描',
 }
 
-const modeDescriptions: Record<AuditMode, string> = {
-  full_audit: 'LSTM + GCN + DeepSVDD + 推理 + 验证 + 修复建议',
-  known_full_scan: '仅 LSTM 已知漏洞检测',
-  unknown_risk_scan: 'DeepSVDD + LSTM 异常检测',
-  cross_contract_scan: '仅 GCN 跨合约风险分析',
+const modeDescriptions: Partial<Record<AuditMode, string>> = {
+  full_audit: '检测智能体 + 推理智能体 + 验证智能体 + 报告智能体',
 }
 
 function handleFileChange(e: Event) {

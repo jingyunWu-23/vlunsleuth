@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import type { Finding, VulnerabilityId, Severity } from '@/types'
-import { VULN_LABELS } from '@/types'
+import { VULN_LABELS, SEVERITY_LABELS } from '@/types'
 import MonacoDiffEditor from '@/components/editor/MonacoDiffEditor.vue'
 import MonacoCodeViewer from '@/components/editor/MonacoCodeViewer.vue'
 
@@ -66,8 +66,13 @@ function vulnColor(vid: VulnerabilityId): string {
     VULN_TIMESTAMP: 'text-orange-400 bg-orange-500/10 border-orange-500/30',
     VULN_DELEGATECALL: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
     VULN_UNCHECKED_LOW_LEVEL_CALLS: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30',
+    VULN_ACCESS_CONTROL: 'text-pink-400 bg-pink-500/10 border-pink-500/30',
+    VULN_ARITHMETIC: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
+    VULN_BAD_RANDOMNESS: 'text-lime-400 bg-lime-500/10 border-lime-500/30',
+    VULN_LOCKED_ETHER: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30',
     VULN_CROSS_CONTRACT_RISK: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30',
     VULN_UNKNOWN_ANOMALY: 'text-blue-400 bg-blue-500/10 border-blue-500/30',
+    VULN_LLM_SEMANTIC_WARNING: 'text-purple-400 bg-purple-500/10 border-purple-500/30',
   }
   return map[vid]
 }
@@ -203,7 +208,7 @@ function random() external view returns (uint256) {
               {{ VULN_LABELS[f.vulnerability_id] }}
             </span>
             <span class="px-1.5 py-0.5 text-xs rounded" :class="severityBadge(f.severity)">
-              {{ f.severity.toUpperCase() }}
+              {{ SEVERITY_LABELS[f.severity] }}
             </span>
             <span class="text-xs text-gray-600 ml-auto">
               {{ statusLabel(f.status) }}
@@ -244,13 +249,28 @@ function random() external view returns (uint256) {
                   {{ VULN_LABELS[selectedFinding.vulnerability_id] }}
                 </span>
                 <span class="px-1.5 py-0.5 text-xs rounded" :class="severityBadge(selectedFinding.severity)">
-                  {{ selectedFinding.severity.toUpperCase() }}
+                  {{ SEVERITY_LABELS[selectedFinding.severity] }}
                 </span>
               </div>
               <h2 class="text-base font-bold text-white">
                 {{ selectedFinding.contract_name }}.{{ selectedFinding.function_signature }}
               </h2>
               <p class="text-sm text-gray-400 mt-1.5 leading-relaxed">{{ selectedFinding.summary }}</p>
+              <div
+                v-if="selectedFinding.requires_human_review || selectedFinding.risk_title"
+                class="mt-3 rounded-lg border border-purple-500/20 bg-purple-500/5 px-3 py-2"
+              >
+                <div class="flex items-center gap-2 text-xs">
+                  <span class="text-purple-400 font-medium">{{ selectedFinding.risk_title || 'LLM 未知语义风险' }}</span>
+                  <span v-if="selectedFinding.trust_level" class="text-gray-500 font-mono">{{ selectedFinding.trust_level }}</span>
+                </div>
+                <p v-if="selectedFinding.risk_type_freeform" class="mt-1 text-xs text-gray-500 font-mono">
+                  {{ selectedFinding.risk_type_freeform }}
+                </p>
+                <p v-if="selectedFinding.requires_human_review" class="mt-1 text-xs text-gray-400">
+                  该修复建议来自未知风险假设，需要人工复核后再应用。
+                </p>
+              </div>
             </div>
             <button
               @click="copyPatchCode"

@@ -47,6 +47,14 @@ function formatDate(d?: string) {
   if (!d) return '--'
   return new Date(d).toLocaleString('zh-CN')
 }
+
+function contractSummaryText(task: { summary?: { input_contract_total?: number; contracts?: number; normal_contracts?: number; abnormal_contracts?: number } }) {
+  const total = task.summary?.input_contract_total ?? task.summary?.contracts
+  if (!total) return ''
+  const normal = task.summary?.normal_contracts ?? 0
+  const abnormal = task.summary?.abnormal_contracts ?? 0
+  return `总 ${total} / 正常 ${normal} / 异常 ${abnormal}`
+}
 </script>
 
 <template>
@@ -137,7 +145,12 @@ function formatDate(d?: string) {
                 <span class="text-xs text-gray-500 w-8">{{ task.progress }}%</span>
               </div>
             </td>
-            <td class="py-3 px-4 text-gray-300 text-xs">{{ task.contract_name || '--' }}</td>
+            <td class="py-3 px-4 text-gray-300 text-xs">
+              <div>{{ task.contract_name || '--' }}</div>
+              <div v-if="contractSummaryText(task)" class="text-[11px] text-gray-500 mt-1">
+                {{ contractSummaryText(task) }}
+              </div>
+            </td>
             <td class="py-3 px-4 text-gray-500 text-xs">{{ formatDate(task.created_at) }}</td>
             <td class="py-3 px-4">
               <div class="flex items-center gap-2">

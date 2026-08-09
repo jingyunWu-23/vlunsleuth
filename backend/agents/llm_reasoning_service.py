@@ -70,6 +70,7 @@ def build_reasoning_payload(
             "selected_scores": vector.selected_scores,
             "warning_scores": vector.warning_scores,
             "components": {
+                "lstm_score": vector.lstm_score,
                 "anomaly_score": vector.anomaly_score,
                 "gcn_score": vector.gcn_score,
                 "static_score": vector.static_score,

@@ -6,24 +6,21 @@ const props = defineProps<{
 }>()
 
 function riskLevel(r: number): { label: string; color: string; bg: string } {
-  if (r >= 0.7) return { label: '严重', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' }
-  if (r >= 0.45) return { label: '高',  color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20' }
-  if (r >= 0.35) return { label: '中',  color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20' }
-  return { label: '低', color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/20' }
+  if (r >= 0.7) return { label: '高', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/20' }
+  if (r >= 0.45) return { label: '中', color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/20' }
+  return { label: '低', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/20' }
 }
 
 function scoreColor(r: number): string {
   if (r >= 0.7) return 'text-red-400'
   if (r >= 0.45) return 'text-orange-400'
-  if (r >= 0.35) return 'text-yellow-400'
-  return 'text-green-400'
+  return 'text-yellow-400'
 }
 
 function barColor(r: number): string {
   if (r >= 0.7) return 'bg-red-500'
   if (r >= 0.45) return 'bg-orange-500'
-  if (r >= 0.35) return 'bg-yellow-500'
-  return 'bg-green-500'
+  return 'bg-yellow-500'
 }
 
 const averageScore = props.vectors.length
@@ -53,6 +50,7 @@ const averageScore = props.vectors.length
             <th class="text-left py-3 px-5 font-medium w-10">#</th>
             <th class="text-left py-3 px-3 font-medium">函数签名</th>
             <th class="text-left py-3 px-3 font-medium w-40">所属合约</th>
+            <th class="text-right py-3 px-3 font-medium w-20">LSTM 分</th>
             <th class="text-right py-3 px-3 font-medium w-20">异常分</th>
             <th class="text-right py-3 px-3 font-medium w-20">GCN 分</th>
             <th class="text-right py-3 px-3 font-medium w-20">静态分</th>
@@ -92,6 +90,11 @@ const averageScore = props.vectors.length
             <!-- Contract -->
             <td class="py-3 px-3 text-gray-400 truncate max-w-[140px]" :title="rv.contract_name">
               {{ rv.contract_name }}
+            </td>
+
+            <!-- LSTM -->
+            <td class="py-3 px-3 text-right font-mono" :class="scoreColor(rv.lstm_score ?? 0)">
+              {{ (rv.lstm_score ?? 0).toFixed(3) }}
             </td>
 
             <!-- Anomaly -->

@@ -43,6 +43,7 @@ def select_reasoning_targets(
         if max(vector.selected_scores.values(), default=0.0) >= config.min_selected_score:
             vector_reasons.append(f"R_selected >= {config.min_selected_score}")
         model_max = max(
+            vector.lstm_score,
             vector.anomaly_score,
             vector.gcn_score,
             max(vector.selected_scores.values(), default=0.0),

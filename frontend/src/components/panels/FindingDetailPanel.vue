@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Finding, AuditReport, VulnerabilityId, Severity } from '@/types'
-import { VULN_LABELS, SEVERITY_COLORS } from '@/types'
+import { VULN_LABELS, SEVERITY_COLORS, SEVERITY_LABELS } from '@/types'
 
 const props = defineProps<{
   finding: Finding | null
@@ -14,8 +14,13 @@ const vulnColor = (vid: VulnerabilityId): string => {
     case 'VULN_TIMESTAMP': return 'text-orange-400 bg-orange-500/10 border-orange-500/30'
     case 'VULN_DELEGATECALL': return 'text-purple-400 bg-purple-500/10 border-purple-500/30'
     case 'VULN_UNCHECKED_LOW_LEVEL_CALLS': return 'text-yellow-400 bg-yellow-500/10 border-yellow-500/30'
+    case 'VULN_ACCESS_CONTROL': return 'text-pink-400 bg-pink-500/10 border-pink-500/30'
+    case 'VULN_ARITHMETIC': return 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+    case 'VULN_BAD_RANDOMNESS': return 'text-lime-400 bg-lime-500/10 border-lime-500/30'
+    case 'VULN_LOCKED_ETHER': return 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30'
     case 'VULN_CROSS_CONTRACT_RISK': return 'text-cyan-400 bg-cyan-500/10 border-cyan-500/30'
     case 'VULN_UNKNOWN_ANOMALY': return 'text-blue-400 bg-blue-500/10 border-blue-500/30'
+    case 'VULN_LLM_SEMANTIC_WARNING': return 'text-purple-400 bg-purple-500/10 border-purple-500/30'
   }
 }
 
@@ -48,10 +53,25 @@ const statusLabel = (s: string): string => {
             {{ VULN_LABELS[finding.vulnerability_id] }}
           </span>
           <span class="px-2 py-0.5 text-xs font-medium rounded" :class="severityBadge(finding.severity)">
-            {{ finding.severity.toUpperCase() }}
+            {{ SEVERITY_LABELS[finding.severity] }}
           </span>
         </div>
         <h3 class="text-white text-sm font-medium leading-relaxed">{{ finding.summary }}</h3>
+        <div
+          v-if="finding.requires_human_review || finding.risk_title"
+          class="mt-3 rounded-lg border border-purple-500/20 bg-purple-500/5 px-3 py-2"
+        >
+          <div class="flex items-center gap-2 text-xs">
+            <span class="text-purple-400 font-medium">{{ finding.risk_title || 'LLM 未知语义风险' }}</span>
+            <span v-if="finding.trust_level" class="text-gray-500 font-mono">{{ finding.trust_level }}</span>
+          </div>
+          <p v-if="finding.risk_type_freeform" class="mt-1 text-xs text-gray-500 font-mono">
+            {{ finding.risk_type_freeform }}
+          </p>
+          <p v-if="finding.requires_human_review" class="mt-1 text-xs text-gray-400">
+            该结论由未知风险智能体生成，需要人工复核。
+          </p>
+        </div>
 
         <!-- Meta -->
         <div class="flex items-center gap-4 mt-3 text-xs text-gray-500">

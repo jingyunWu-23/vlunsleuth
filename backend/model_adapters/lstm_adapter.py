@@ -14,6 +14,10 @@ LSTM_VULNERABILITIES = {
     "timestamp": "VULN_TIMESTAMP",
     "delegatecall": "VULN_DELEGATECALL",
     "SBunchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "access_control": "VULN_ACCESS_CONTROL",
+    "arithmetic": "VULN_ARITHMETIC",
+    "bad_randomness": "VULN_BAD_RANDOMNESS",
+    "locked_ether": "VULN_LOCKED_ETHER",
 }
 
 LSTM_MODEL_IDS = {
@@ -21,6 +25,10 @@ LSTM_MODEL_IDS = {
     "timestamp": "LSTM_TIMESTAMP",
     "delegatecall": "LSTM_DELEGATECALL",
     "SBunchecked_low_level_calls": "LSTM_UNCHECKED_LOW_LEVEL_CALLS",
+    "access_control": "LSTM_ACCESS_CONTROL",
+    "arithmetic": "LSTM_ARITHMETIC",
+    "bad_randomness": "LSTM_BAD_RANDOMNESS",
+    "locked_ether": "LSTM_LOCKED_ETHER",
 }
 
 LSTM_MODEL_FILES = {
@@ -28,6 +36,10 @@ LSTM_MODEL_FILES = {
     "timestamp": "lstm_scg_timestamp_gen1000.h5",
     "delegatecall": "lstm_scg_delegatecall_gen0.h5",
     "SBunchecked_low_level_calls": "lstm_scg_SBunchecked_low_level_calls_gen1000.h5",
+    "access_control": "lstm_slither_access_control.h5",
+    "arithmetic": "lstm_slither_arithmetic.h5",
+    "bad_randomness": "lstm_slither_bad_randomness.h5",
+    "locked_ether": "lstm_slither_locked_ether.h5",
 }
 
 
@@ -47,6 +59,10 @@ class LSTMAdapter(DetectionModel):
         "LSTM_TIMESTAMP",
         "LSTM_DELEGATECALL",
         "LSTM_UNCHECKED_LOW_LEVEL_CALLS",
+        "LSTM_ACCESS_CONTROL",
+        "LSTM_ARITHMETIC",
+        "LSTM_BAD_RANDOMNESS",
+        "LSTM_LOCKED_ETHER",
     ]
 
     def __init__(
@@ -128,12 +144,12 @@ class LSTMAdapter(DetectionModel):
                 model = self._load_model(vulnerability, model_path)
                 input_matrix = self._encode_function(fn)
                 prediction = model.predict(input_matrix, verbose=0)
-                probability = float(prediction[0][1])
+                probability = extract_vulnerability_probability(prediction)
                 return clamp(probability), {
                     "adapter_mode": "h5_inference",
                     "feature_type": "lstm_h5_token_ids",
                     "input_shape": list(input_matrix.shape),
-                    "raw_prediction": [float(prediction[0][0]), float(prediction[0][1])],
+                    "raw_prediction": serialize_prediction(prediction),
                 }
             except Exception as exc:
                 self._runtime_status[f"{vulnerability}_h5_error"] = f"{type(exc).__name__}: {exc}"
@@ -242,6 +258,23 @@ class LSTMAdapter(DetectionModel):
             has_call = "low_level_call" in dangerous
             checked = "require(" in code or "success" in code or "assert(" in code
             return clamp(0.70 if has_call and not checked else 0.20 if has_call else 0.0)
+        if vulnerability == "access_control":
+            privileged_terms = ("owner", "admin", "role", "onlyowner", "hasrole", "tx.origin")
+            has_privileged_logic = any(term in code for term in privileged_terms)
+            has_guard = any(term in code for term in ("onlyowner", "hasrole", "require(", "assert("))
+            return clamp(0.70 if has_privileged_logic and not has_guard else 0.30 if "tx_origin" in dangerous else 0.0)
+        if vulnerability == "arithmetic":
+            arithmetic_ops = any(op in code for op in ("+", "-", "*", "/", "%", "++", "--"))
+            has_safemath = "safemath" in code or " solidity ^0.8" in code or "pragma solidity ^0.8" in code
+            return clamp(0.65 if arithmetic_ops and not has_safemath else 0.15 if arithmetic_ops else 0.0)
+        if vulnerability == "bad_randomness":
+            weak_random = any(term in code for term in ("block.timestamp", "block.number", "blockhash", "prevrandao", "difficulty", "now"))
+            randomness_use = any(term in code for term in ("random", "rand", "lottery", "raffle", "keccak256", "%"))
+            return clamp(0.80 if weak_random and randomness_use else 0.35 if weak_random else 0.0)
+        if vulnerability == "locked_ether":
+            accepts_ether = "payable" in code or "msg.value" in code
+            can_send = any(term in code for term in (".transfer", ".send", ".call", "selfdestruct"))
+            return clamp(0.70 if accepts_ether and not can_send else 0.0)
         return 0.0
 
 
@@ -251,20 +284,66 @@ def normalize_vulnerability(vulnerability: str) -> str:
         "VULN_TIMESTAMP": "timestamp",
         "VULN_DELEGATECALL": "delegatecall",
         "VULN_UNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
+        "VULN_ACCESS_CONTROL": "access_control",
+        "VULN_ARITHMETIC": "arithmetic",
+        "VULN_BAD_RANDOMNESS": "bad_randomness",
+        "VULN_LOCKED_ETHER": "locked_ether",
         "LSTM_REENTRANCY": "reentrancy",
         "LSTM_TIMESTAMP": "timestamp",
         "LSTM_DELEGATECALL": "delegatecall",
         "LSTM_UNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
         "LSTM_SBUNCHECKED_LOW_LEVEL_CALLS": "SBunchecked_low_level_calls",
+        "LSTM_ACCESS_CONTROL": "access_control",
+        "LSTM_ARITHMETIC": "arithmetic",
+        "LSTM_BAD_RANDOMNESS": "bad_randomness",
+        "LSTM_LOCKED_ETHER": "locked_ether",
         "unchecked_low_level_calls": "SBunchecked_low_level_calls",
         "unchecked-low-level-calls": "SBunchecked_low_level_calls",
         "unchecked low level calls": "SBunchecked_low_level_calls",
+        "access-control": "access_control",
+        "access control": "access_control",
+        "bad-randomness": "bad_randomness",
+        "bad randomness": "bad_randomness",
+        "weak randomness": "bad_randomness",
+        "weak_randomness": "bad_randomness",
+        "locked-ether": "locked_ether",
+        "locked ether": "locked_ether",
     }
     if vulnerability in mapping:
         return mapping[vulnerability]
     key = vulnerability.strip().lower()
     compact_key = key.replace("-", "_").replace(" ", "_")
     return mapping.get(key, mapping.get(compact_key, vulnerability))
+
+
+def extract_vulnerability_probability(prediction) -> float:
+    try:
+        row = prediction[0]
+        if hasattr(row, "tolist"):
+            values = row.tolist()
+        elif isinstance(row, (list, tuple)):
+            values = list(row)
+        else:
+            values = [row]
+        if len(values) >= 2:
+            return float(values[1])
+        return float(values[0])
+    except Exception:
+        return float(prediction)
+
+
+def serialize_prediction(prediction) -> list[float]:
+    try:
+        row = prediction[0]
+        if hasattr(row, "tolist"):
+            values = row.tolist()
+        elif isinstance(row, (list, tuple)):
+            values = list(row)
+        else:
+            values = [row]
+        return [float(item) for item in values]
+    except Exception:
+        return [float(prediction)]
 
 
 def clamp(value: float) -> float:

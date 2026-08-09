@@ -46,8 +46,13 @@ export type VulnerabilityId =
   | 'VULN_TIMESTAMP'
   | 'VULN_DELEGATECALL'
   | 'VULN_UNCHECKED_LOW_LEVEL_CALLS'
+  | 'VULN_ACCESS_CONTROL'
+  | 'VULN_ARITHMETIC'
+  | 'VULN_BAD_RANDOMNESS'
+  | 'VULN_LOCKED_ETHER'
   | 'VULN_CROSS_CONTRACT_RISK'
   | 'VULN_UNKNOWN_ANOMALY'
+  | 'VULN_LLM_SEMANTIC_WARNING'
 
 export type Severity = 'high' | 'medium' | 'low'
 
@@ -58,8 +63,13 @@ export const VULN_LABELS: Record<VulnerabilityId, string> = {
   VULN_TIMESTAMP: '时间戳依赖',
   VULN_DELEGATECALL: '不安全委托调用',
   VULN_UNCHECKED_LOW_LEVEL_CALLS: '未检查低级调用',
+  VULN_ACCESS_CONTROL: '访问控制缺陷',
+  VULN_ARITHMETIC: '算术风险',
+  VULN_BAD_RANDOMNESS: '不安全随机数',
+  VULN_LOCKED_ETHER: '以太锁定风险',
   VULN_CROSS_CONTRACT_RISK: '跨合约调用风险',
   VULN_UNKNOWN_ANOMALY: '未知行为异常',
+  VULN_LLM_SEMANTIC_WARNING: 'LLM 未知语义风险',
 }
 
 export const SEVERITY_COLORS: Record<Severity, string> = {
@@ -68,11 +78,18 @@ export const SEVERITY_COLORS: Record<Severity, string> = {
   low: 'bg-yellow-500 text-black',
 }
 
+export const SEVERITY_LABELS: Record<Severity, string> = {
+  high: '高',
+  medium: '中',
+  low: '低',
+}
+
 // ============= Audit Task =============
 export interface AuditTask {
   task_id: string
   status: TaskStatus
   progress: number
+  current_phase?: string
   mode?: AuditMode
   can_cancel: boolean
   can_retry: boolean
@@ -96,6 +113,10 @@ export interface AuditSummary {
   suspected: number
   warnings: number
   anomaly_count: number
+  contracts?: number
+  input_contract_total?: number
+  normal_contracts?: number
+  abnormal_contracts?: number
 }
 
 export interface AuditTaskListResponse {
@@ -132,6 +153,7 @@ export interface RiskVector {
   function_id: string
   contract_name: string
   function_signature: string
+  lstm_score: number
   anomaly_score: number
   gcn_score: number
   static_score: number
@@ -198,6 +220,10 @@ export interface Finding {
   repair_suggestion?: RepairSuggestion
   attack_path?: string
   key_features?: string[]
+  risk_title?: string
+  risk_type_freeform?: string
+  trust_level?: string
+  requires_human_review?: boolean
 }
 
 export interface Warning {
@@ -230,6 +256,32 @@ export interface WorkflowMeta {
   verification?: Record<string, unknown>
 }
 
+export type ContractDetectionStatus = 'normal' | 'abnormal'
+
+export interface ContractProjectSummary {
+  project_id: string
+  project_name: string
+  contract_name: string
+  source_path: string
+  function_count: number
+  finding_count: number
+  warning_count: number
+  max_risk: number
+  severity: Severity | 'none'
+  status: ContractDetectionStatus
+  vulnerabilities: VulnerabilityId[]
+  finding_ids: string[]
+  warning_ids: string[]
+}
+
+export interface ContractSummary {
+  total_contracts: number
+  input_contract_total: number
+  normal_contracts: number
+  abnormal_contracts: number
+  projects: ContractProjectSummary[]
+}
+
 export interface AuditReport {
   task_id: string
   mode: AuditMode
@@ -237,7 +289,9 @@ export interface AuditReport {
   risk_vectors: RiskVector[]
   findings: Finding[]
   warnings: Warning[]
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown> & {
+    contract_summary?: ContractSummary
+  }
 }
 
 // ============= Source File (for Monaco editor) =============
@@ -269,6 +323,19 @@ export interface HealthResponse {
   workers: number
   tasks: Record<string, number>
   database: string
+}
+
+export interface LlmStatusResponse {
+  configured: boolean
+  provider: string
+  model: string
+  base_url: string
+  api_key_configured: boolean
+  missing: string[]
+  temperature: number
+  timeout_seconds: number
+  reachable?: boolean
+  message?: string
 }
 
 // ============= Call Graph =============

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuditStore } from '@/stores/audit'
 
@@ -22,6 +22,24 @@ function isActive(path: string) {
 }
 
 const confirmedCount = auditStore.confirmedFindings?.length ?? 0
+
+interface NavItem {
+  icon: string
+  label: string
+  path: string
+  badge?: number
+  badgeColor?: string
+}
+
+const navItems = computed<NavItem[]>(() => [
+  { icon: 'M4 6h16M4 12h16M4 18h16', label: '总览', path: '/' },
+  { icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01', label: '检测结果', badge: confirmedCount, badgeColor: 'bg-red-500', path: auditStore.currentTask?.task_id ? `/audit/${auditStore.currentTask.task_id}` : '/tasks' },
+  { icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7', label: '跨合约调用图', path: '/cross-contract' },
+  { icon: 'M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12', label: '函数风险排名', path: '/risk-ranking' },
+  { icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6', label: '修复建议', path: '/repair' },
+  { icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', label: '报告', path: auditStore.currentTask?.task_id ? `/report/${auditStore.currentTask.task_id}` : '/report' },
+  { icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', label: '历史任务', path: '/tasks' },
+])
 </script>
 
 <template>
@@ -72,15 +90,7 @@ const confirmedCount = auditStore.confirmedFindings?.length ?? 0
     <!-- Nav Menu -->
     <nav class="flex-1 overflow-y-auto py-3 px-3 space-y-1" :class="{ 'px-2': isCollapsed }">
       <button
-        v-for="item in [
-          { icon: 'M4 6h16M4 12h16M4 18h16', label: '总览', path: '/' },
-          { icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01', label: '检测结果', badge: confirmedCount, badgeColor: 'bg-red-500', path: '/audit/detail' },
-          { icon: 'M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7', label: '跨合约调用图', path: '/cross-contract' },
-          { icon: 'M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12', label: '函数风险排名', path: '/risk-ranking' },
-          { icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6', label: '修复建议', path: '/repair' },
-          { icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', label: '报告', path: auditStore.currentTask?.task_id ? `/report/${auditStore.currentTask.task_id}` : '/report' },
-          { icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z', label: '历史任务', path: '/tasks' },
-        ]"
+        v-for="item in navItems"
         :key="item.label"
         @click="navigateTo(item.path)"
         :class="[

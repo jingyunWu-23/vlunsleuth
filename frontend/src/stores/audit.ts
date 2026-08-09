@@ -21,6 +21,26 @@ export const useAuditStore = defineStore('audit', () => {
 
   const top10RiskVectors = computed(() => sortedRiskVectors.value.slice(0, 10))
 
+  const contractSummary = computed(() => currentReport.value?.metadata?.contract_summary ?? null)
+  const contractProjects = computed(() => contractSummary.value?.projects ?? [])
+  const inputContractTotal = computed(() =>
+    contractSummary.value?.input_contract_total
+    ?? contractSummary.value?.total_contracts
+    ?? currentTask.value?.summary?.input_contract_total
+    ?? currentTask.value?.summary?.contracts
+    ?? 0,
+  )
+  const normalContractCount = computed(() =>
+    contractSummary.value?.normal_contracts
+    ?? currentTask.value?.summary?.normal_contracts
+    ?? 0,
+  )
+  const abnormalContractCount = computed(() =>
+    contractSummary.value?.abnormal_contracts
+    ?? currentTask.value?.summary?.abnormal_contracts
+    ?? 0,
+  )
+
   const confirmedFindings = computed(() =>
     currentReport.value?.findings.filter((f) => f.status === 'confirmed') ?? [],
   )
@@ -188,6 +208,11 @@ export const useAuditStore = defineStore('audit', () => {
     statusCounts,
     sortedRiskVectors,
     top10RiskVectors,
+    contractSummary,
+    contractProjects,
+    inputContractTotal,
+    normalContractCount,
+    abnormalContractCount,
     confirmedFindings,
     suspectedFindings,
     anomalyWarnings,

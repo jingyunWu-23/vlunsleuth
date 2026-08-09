@@ -74,7 +74,7 @@ def build_knowledge_query(function: FunctionUnit, vector: RiskVector | None = No
     score_text = ""
     if vector:
         score_text = (
-            f"R_func={vector.r_func} static={vector.static_score} anomaly={vector.anomaly_score} "
+            f"R_func={vector.r_func} lstm={vector.lstm_score} static={vector.static_score} anomaly={vector.anomaly_score} "
             f"knowledge={vector.knowledge_score} consistency={vector.consistency_score}"
         )
     parts = [

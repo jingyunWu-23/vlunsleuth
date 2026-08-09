@@ -55,7 +55,9 @@ const bottomTabs =[
       </svg>
       <div class="text-center">
         <p class="text-white font-medium mb-1">检测进行中...</p>
-        <p class="text-gray-400 text-sm">进度: {{ auditStore.currentTask.progress }}%</p>
+        <p class="text-gray-400 text-sm">
+          {{ auditStore.currentTask.current_phase || '准备检测' }} · {{ auditStore.currentTask.progress }}%
+        </p>
         <div class="w-48 h-2 bg-[#161b22] rounded-full overflow-hidden mt-2 mx-auto">
           <div class="h-full bg-blue-500 rounded-full transition-all duration-500" :style="{ width: `${auditStore.currentTask?.progress ?? 0}%` }" />
         </div>

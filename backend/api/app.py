@@ -12,6 +12,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, List, Optional
 
+from backend.agents.llm_client import llm_config_status
 from backend.api.security import hash_password, hash_token, new_access_token, session_expires_at, verify_password
 from backend.persistence import get_store
 from backend.reporting.markdown_report import write_markdown
@@ -123,6 +124,10 @@ if FastAPI is not None:
             "task_counts": counts,
             "database": database_status(),
         }
+
+    @app.get("/api/v1/llm/status")
+    def llm_status(probe: bool = False) -> dict:
+        return llm_config_status(probe=probe)
 
     @app.post("/api/v1/auth/register")
     def register(request: RegisterRequest) -> dict:
@@ -419,15 +424,20 @@ def run_task(request: AuditRequest) -> None:
     output_dir = task_output_dir(request.task_id)
     output_dir.mkdir(parents=True, exist_ok=True)
     try:
-        report = run_audit(request)
+        report = run_audit(request, progress_callback=lambda progress, phase: update_task_progress(request.task_id, progress, phase))
         json_path = output_dir / f"{request.task_id}.json"
         markdown_path = output_dir / f"{request.task_id}.md"
         json_path.write_text(json.dumps(asdict(report), ensure_ascii=False, indent=2), encoding="utf-8")
         write_markdown(report, markdown_path)
+        contract_summary = report.metadata.get("contract_summary", {})
         summary = {
             "findings": len(report.findings),
             "warnings": len(report.warnings),
             "functions": len(report.risk_vectors),
+            "contracts": contract_summary.get("total_contracts", report.metadata.get("contracts")),
+            "input_contract_total": contract_summary.get("input_contract_total", report.metadata.get("contracts")),
+            "normal_contracts": contract_summary.get("normal_contracts"),
+            "abnormal_contracts": contract_summary.get("abnormal_contracts"),
             "evidence_count": report.metadata.get("evidence_count"),
             "model_counts": report.metadata.get("evidence_center", {}).get("model_counts", {}),
         }
@@ -503,6 +513,19 @@ def mark_task(task_id: str, **updates: Any) -> None:
         record.update(updates)
         if new_status is not None and new_status != old_status:
             append_event_to_record(record, new_status, f"Task status changed to {new_status}.")
+        snapshot = dict(record)
+    write_status(snapshot)
+
+
+def update_task_progress(task_id: str, progress: int, phase: str) -> None:
+    with _lock:
+        record = _tasks.get(task_id)
+        if not record or record.get("status") != "running":
+            return
+        current_progress = int(record.get("progress") or 0)
+        record["progress"] = max(current_progress, min(progress, 99))
+        record["current_phase"] = phase
+        record["updated_at"] = utc_now()
         snapshot = dict(record)
     write_status(snapshot)
 

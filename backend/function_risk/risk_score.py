@@ -11,8 +11,13 @@ DEFAULT_WARNING_CATEGORIES = [
     "VULN_TIMESTAMP",
     "VULN_DELEGATECALL",
     "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "VULN_ACCESS_CONTROL",
+    "VULN_ARITHMETIC",
+    "VULN_BAD_RANDOMNESS",
+    "VULN_LOCKED_ETHER",
     "VULN_CROSS_CONTRACT_RISK",
     "VULN_UNKNOWN_ANOMALY",
+    "VULN_LLM_SEMANTIC_WARNING",
 ]
 
 SWC_TO_VULN = {
@@ -20,6 +25,10 @@ SWC_TO_VULN = {
     "SWC-107": "VULN_REENTRANCY",
     "SWC-112": "VULN_DELEGATECALL",
     "SWC-116": "VULN_TIMESTAMP",
+    "SWC-101": "VULN_ARITHMETIC",
+    "SWC-105": "VULN_ACCESS_CONTROL",
+    "SWC-120": "VULN_BAD_RANDOMNESS",
+    "SWC-132": "VULN_LOCKED_ETHER",
 }
 
 VULN_ALIASES = {
@@ -37,13 +46,49 @@ VULN_ALIASES = {
     "unchecked-low-level-calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
     "lstm_unchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
     "lstm_sbunchecked_low_level_calls": "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+    "access_control": "VULN_ACCESS_CONTROL",
+    "access control": "VULN_ACCESS_CONTROL",
+    "access-control": "VULN_ACCESS_CONTROL",
+    "lstm_access_control": "VULN_ACCESS_CONTROL",
+    "arithmetic": "VULN_ARITHMETIC",
+    "integer_overflow": "VULN_ARITHMETIC",
+    "integer underflow": "VULN_ARITHMETIC",
+    "integer_underflow": "VULN_ARITHMETIC",
+    "overflow": "VULN_ARITHMETIC",
+    "underflow": "VULN_ARITHMETIC",
+    "lstm_arithmetic": "VULN_ARITHMETIC",
+    "bad_randomness": "VULN_BAD_RANDOMNESS",
+    "bad randomness": "VULN_BAD_RANDOMNESS",
+    "bad-randomness": "VULN_BAD_RANDOMNESS",
+    "weak_randomness": "VULN_BAD_RANDOMNESS",
+    "weak randomness": "VULN_BAD_RANDOMNESS",
+    "weak sources of randomness": "VULN_BAD_RANDOMNESS",
+    "lstm_bad_randomness": "VULN_BAD_RANDOMNESS",
+    "locked_ether": "VULN_LOCKED_ETHER",
+    "locked ether": "VULN_LOCKED_ETHER",
+    "locked-ether": "VULN_LOCKED_ETHER",
+    "lstm_locked_ether": "VULN_LOCKED_ETHER",
     "gcn": "VULN_CROSS_CONTRACT_RISK",
     "cross_contract": "VULN_CROSS_CONTRACT_RISK",
     "cross_contract_risk": "VULN_CROSS_CONTRACT_RISK",
     "deepsvdd": "VULN_UNKNOWN_ANOMALY",
     "unknown_anomaly": "VULN_UNKNOWN_ANOMALY",
     "anomaly": "VULN_UNKNOWN_ANOMALY",
+    "llm_semantic_warning": "VULN_LLM_SEMANTIC_WARNING",
+    "llm_unknown_risk": "VULN_LLM_SEMANTIC_WARNING",
+    "semantic_unknown_risk": "VULN_LLM_SEMANTIC_WARNING",
 }
+
+R_FUNC_POSITIVE_WEIGHTS = {
+    "L_f": 0.25,
+    "A_f": 0.20,
+    "G_f": 0.15,
+    "S_f": 0.20,
+    "B_f": 0.10,
+    "K_f": 0.10,
+    "C_f": 0.10,
+}
+R_FUNC_PROTECTION_WEIGHT = 0.20
 
 
 def compute_risk_vectors(
@@ -62,6 +107,7 @@ def compute_risk_vectors(
             function_id=fn.function_id,
             contract_name=fn.contract_name,
             function_signature=fn.signature,
+            lstm_score=components["L_f"],
             anomaly_score=components["A_f"],
             gcn_score=components["G_f"],
             static_score=components["S_f"],
@@ -89,6 +135,7 @@ def compute_risk_vectors(
 
 
 def compute_components(fn: FunctionUnit, evidences: List[ModelEvidence]) -> Dict[str, Any]:
+    lstm = max((ev.calibrated_confidence for ev in evidences if ev.model_id.startswith("LSTM")), default=0.0)
     anomaly = max((ev.calibrated_confidence for ev in evidences if ev.model_id.startswith("DEEPSVDD")), default=0.0)
     gcn = max((ev.calibrated_confidence for ev in evidences if ev.model_id.startswith("GCN")), default=0.0)
     static = max(
@@ -100,6 +147,7 @@ def compute_components(fn: FunctionUnit, evidences: List[ModelEvidence]) -> Dict
     consistency = consistency_score(evidences)
     protection = float(fn.features.get("protection_score", 0.0))
     return {
+        "L_f": lstm,
         "A_f": anomaly,
         "G_f": gcn,
         "S_f": static,
@@ -108,6 +156,7 @@ def compute_components(fn: FunctionUnit, evidences: List[ModelEvidence]) -> Dict
         "C_f": consistency,
         "P_f": protection,
         "reasons": {
+            "L_f": explain_component("LSTM known-vulnerability evidence", lstm, evidences, "LSTM"),
             "A_f": explain_component("DeepSVDD anomaly evidence", anomaly, evidences, "DEEPSVDD"),
             "G_f": explain_component("GCN cross-contract evidence", gcn, evidences, "GCN"),
             "S_f": {
@@ -137,15 +186,18 @@ def compute_components(fn: FunctionUnit, evidences: List[ModelEvidence]) -> Dict
 
 
 def compute_r_func(components: Dict[str, Any]) -> float:
-    return clip(
-        0.25 * components["A_f"]
-        + 0.15 * components["G_f"]
-        + 0.20 * components["S_f"]
-        + 0.15 * components["B_f"]
-        + 0.15 * components["K_f"]
-        + 0.10 * components["C_f"]
-        - 0.20 * components["P_f"]
-    )
+    active_terms = [
+        (key, weight, float(components.get(key, 0.0)))
+        for key, weight in R_FUNC_POSITIVE_WEIGHTS.items()
+        if float(components.get(key, 0.0)) > 0.0
+    ]
+    active_weight_sum = sum(weight for _, weight, _ in active_terms)
+    if active_weight_sum <= 0.0:
+        return 0.0
+
+    normalized_risk = sum(weight * score for _, weight, score in active_terms) / active_weight_sum
+    protection_penalty = R_FUNC_PROTECTION_WEIGHT * float(components.get("P_f", 0.0))
+    return clip(normalized_risk - protection_penalty)
 
 
 def compute_r_selected(
@@ -233,6 +285,32 @@ def static_category_score(fn: FunctionUnit, category: str) -> float:
             score = max(score, 0.85)
         elif "low_level_call" in dangerous:
             score = max(score, 0.45)
+    elif category == "VULN_ACCESS_CONTROL":
+        code = fn.code.lower()
+        if "tx_origin" in dangerous:
+            score = max(score, 0.75)
+        if any(term in code for term in ("owner", "admin", "role", "onlyowner", "hasrole")):
+            score = max(score, 0.45)
+    elif category == "VULN_ARITHMETIC":
+        code = fn.code.lower()
+        if any(op in code for op in ("+", "-", "*", "/", "%", "++", "--")):
+            score = max(score, 0.45)
+        if "safemath" not in code and "pragma solidity ^0.8" not in code:
+            score = max(score, 0.6)
+    elif category == "VULN_BAD_RANDOMNESS":
+        code = fn.code.lower()
+        weak_random = any(term in code for term in ("block.timestamp", "block.number", "blockhash", "prevrandao", "difficulty", "now"))
+        randomness_use = any(term in code for term in ("random", "rand", "lottery", "raffle", "keccak256", "%"))
+        if weak_random and randomness_use:
+            score = max(score, 0.85)
+        elif weak_random:
+            score = max(score, 0.45)
+    elif category == "VULN_LOCKED_ETHER":
+        code = fn.code.lower()
+        accepts_ether = "payable" in code or "msg.value" in code
+        can_send = any(term in code for term in (".transfer", ".send", ".call", "selfdestruct"))
+        if accepts_ether and not can_send:
+            score = max(score, 0.75)
     elif category == "VULN_CROSS_CONTRACT_RISK":
         if dangerous.intersection({"delegatecall", "low_level_call", "send", "transfer"}):
             score = max(score, 0.65)
@@ -305,6 +383,8 @@ def semantic_category_allowed(fn: FunctionUnit, category: str) -> bool:
 
     if category == "VULN_UNKNOWN_ANOMALY":
         return True
+    if category == "VULN_LLM_SEMANTIC_WARNING":
+        return True
     if category == "VULN_REENTRANCY":
         return (not read_only) and has_state_update and bool(dangerous.intersection({"low_level_call", "send", "transfer"}))
     if category == "VULN_UNCHECKED_LOW_LEVEL_CALLS":
@@ -313,6 +393,17 @@ def semantic_category_allowed(fn: FunctionUnit, category: str) -> bool:
         return "timestamp" in dangerous
     if category == "VULN_DELEGATECALL":
         return (not read_only) and "delegatecall" in dangerous
+    if category == "VULN_ACCESS_CONTROL":
+        code = fn.code.lower()
+        return "tx_origin" in dangerous or any(term in code for term in ("owner", "admin", "role", "onlyowner", "hasrole"))
+    if category == "VULN_ARITHMETIC":
+        return any(op in fn.code for op in ("+", "-", "*", "/", "%", "++", "--"))
+    if category == "VULN_BAD_RANDOMNESS":
+        code = fn.code.lower()
+        return any(term in code for term in ("block.timestamp", "block.number", "blockhash", "prevrandao", "difficulty", "now"))
+    if category == "VULN_LOCKED_ETHER":
+        code = fn.code.lower()
+        return "payable" in code or "msg.value" in code
     if category == "VULN_CROSS_CONTRACT_RISK":
         return has_external or bool(fn.external_calls)
     return True
@@ -401,8 +492,13 @@ def static_or_unknown(category: str) -> bool:
         "VULN_TIMESTAMP",
         "VULN_DELEGATECALL",
         "VULN_UNCHECKED_LOW_LEVEL_CALLS",
+        "VULN_ACCESS_CONTROL",
+        "VULN_ARITHMETIC",
+        "VULN_BAD_RANDOMNESS",
+        "VULN_LOCKED_ETHER",
         "VULN_CROSS_CONTRACT_RISK",
         "VULN_UNKNOWN_ANOMALY",
+        "VULN_LLM_SEMANTIC_WARNING",
     }
 
 

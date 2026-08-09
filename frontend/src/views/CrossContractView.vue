@@ -152,7 +152,7 @@ function goToAudit() {
                     'bg-yellow-600/20 text-yellow-400': selectedNode.riskLevel === 'low',
                   }"
                 >
-                  {{ selectedNode.riskLevel === 'high' ? '高风险' : selectedNode.riskLevel === 'medium' ? '中风险' : '低风险' }}
+                  {{ selectedNode.riskLevel === 'high' ? '高' : selectedNode.riskLevel === 'medium' ? '中' : '低' }}
                 </span>
               </div>
               <h3 class="text-white text-sm font-medium break-all">{{ selectedNode.name }}</h3>
@@ -179,7 +179,7 @@ function goToAudit() {
                       :class="{
                         'text-red-400': (selectedNode.rFunc ?? 0) >= 0.7,
                         'text-orange-400': (selectedNode.rFunc ?? 0) >= 0.45 && (selectedNode.rFunc ?? 0) < 0.7,
-                        'text-green-400': (selectedNode.rFunc ?? 0) < 0.35,
+                        'text-yellow-400': (selectedNode.rFunc ?? 0) < 0.45,
                       }"
                       class="font-mono"
                     >

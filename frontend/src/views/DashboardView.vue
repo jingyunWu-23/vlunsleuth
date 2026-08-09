@@ -2,16 +2,44 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuditStore } from '@/stores/audit'
+import { llmApi } from '@/api'
+import type { LlmStatusResponse } from '@/types'
 import NewTaskDialog from '@/components/dashboard/NewTaskDialog.vue'
 
 const router = useRouter()
 const auditStore = useAuditStore()
 
 const showNewTaskDialog = ref(false)
+const llmStatus = ref<LlmStatusResponse | null>(null)
+const llmStatusLoading = ref(false)
 
 onMounted(() => {
   auditStore.fetchTasks()
+  fetchLlmStatus()
 })
+
+async function fetchLlmStatus(probe = false) {
+  llmStatusLoading.value = true
+  try {
+    const { data } = await llmApi.status(probe)
+    llmStatus.value = data
+  } catch {
+    llmStatus.value = {
+      configured: false,
+      provider: 'unknown',
+      model: '',
+      base_url: '',
+      api_key_configured: false,
+      missing: ['LLM_STATUS_API'],
+      temperature: 0,
+      timeout_seconds: 0,
+      reachable: false,
+      message: '无法获取 LLM 接入状态',
+    }
+  } finally {
+    llmStatusLoading.value = false
+  }
+}
 
 function openTask(taskId: string) {
   router.push(`/audit/${taskId}`)
@@ -43,7 +71,7 @@ const statusLabels: Record<string, string> = {
     </div>
 
     <!-- Quick actions -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
       <button
         @click="showNewTaskDialog = true"
         class="flex items-center gap-4 p-5 bg-[#161b22] border border-[#30363d] rounded-xl hover:border-blue-500/50 transition-colors group"
@@ -85,8 +113,44 @@ const statusLabels: Record<string, string> = {
           <div class="text-gray-500 text-xs">已完成审计</div>
         </div>
       </div>
+      <button
+        @click="fetchLlmStatus(true)"
+        class="flex items-center gap-4 p-5 bg-[#161b22] border border-[#30363d] rounded-xl hover:border-purple-500/50 transition-colors group text-left"
+      >
+        <div
+          class="w-12 h-12 rounded-xl flex items-center justify-center transition-colors"
+          :class="llmStatus?.configured ? 'bg-purple-600/20 group-hover:bg-purple-600/30' : 'bg-yellow-600/20 group-hover:bg-yellow-600/30'"
+        >
+          <svg
+            class="w-6 h-6"
+            :class="llmStatus?.configured ? 'text-purple-400' : 'text-yellow-400'"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c.251.023.501.05.75.082m-.75-.082a24.301 24.301 0 00-4.5.465m4.5-.465v.006m.75.076a24.301 24.301 0 014.5.465m-4.5-.465v.006m4.5.459v5.167c0 .597.237 1.17.659 1.591L19.8 14.55a5.25 5.25 0 01-3.717 8.95H7.917A5.25 5.25 0 014.2 14.55l4.141-4.141a2.25 2.25 0 00.659-1.591V3.651" />
+          </svg>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <div class="text-white text-sm font-medium">LLM 接入状态</div>
+            <span
+              class="w-2 h-2 rounded-full"
+              :class="{
+                'bg-purple-400': llmStatus?.configured && llmStatus.reachable !== false,
+                'bg-yellow-400': !llmStatus?.configured,
+                'bg-red-400': llmStatus?.reachable === false,
+              }"
+            />
+          </div>
+          <div class="text-gray-500 text-xs mt-0.5 truncate">
+            <span v-if="llmStatusLoading">检测中...</span>
+            <span v-else-if="llmStatus?.configured">{{ llmStatus.model || llmStatus.provider }}</span>
+            <span v-else>未完成配置</span>
+          </div>
+        </div>
+      </button>
     </div>
-
     <!-- Recent tasks -->
     <div class="mb-6">
       <h2 class="text-lg font-semibold text-white mb-4">最近任务</h2>
@@ -136,6 +200,9 @@ const statusLabels: Record<string, string> = {
               </span>
             </div>
             <div class="text-xs text-gray-500 font-mono">{{ task.task_id }}</div>
+            <div v-if="task.current_phase" class="text-xs text-gray-500 mt-1 truncate">
+              {{ task.current_phase }}
+            </div>
           </div>
 
           <div class="text-right shrink-0">

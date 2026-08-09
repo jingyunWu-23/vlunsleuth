@@ -11,6 +11,7 @@ const chartRef = ref<HTMLDivElement>()
 let chartInstance: echarts.ECharts | null = null
 
 const dimensions = [
+  { key: 'lstm_score' as const, label: 'LSTM 已知漏洞', max: 1 },
   { key: 'protection_score' as const, label: '安全防护', max: 1 },
   { key: 'business_score' as const, label: '业务敏感度', max: 1 },
   { key: 'consistency_score' as const, label: '一致性', max: 1 },
@@ -33,7 +34,7 @@ function buildOption(rv: RiskVector | null) {
 
   const values = rv
     ? dimensions.map((d) => rv[d.key])
-    : [0, 0, 0, 0, 0, 0]
+    : dimensions.map(() => 0)
 
   return {
     tooltip: {

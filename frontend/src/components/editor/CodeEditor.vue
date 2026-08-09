@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, shallowRef } from 'vue'
 import * as monaco from 'monaco-editor'
 import type { Finding, VulnerabilityMarker } from '@/types'
+import { SEVERITY_LABELS } from '@/types'
 
 const props = defineProps<{
   findings: Finding[]
@@ -115,7 +116,7 @@ function applyDecorations(ed: monaco.editor.IStandaloneCodeEditor) {
         value: [
           `### ${m.vulnerabilityId.replace('VULN_', '').replace(/_/g, ' ')}`,
           '',
-          `**严重等级**: ${m.severity.toUpperCase()}`,
+          `**风险等级**: ${SEVERITY_LABELS[m.severity]}`,
           `**置信度**: ${(m.confidence * 100).toFixed(0)}%`,
           `**模型来源**: ${m.modelSources.join(', ')}`,
           '',

@@ -249,7 +249,7 @@ const workflowSteps = [
               <dl class="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2 text-xs">
                 <div>
                   <dt class="text-gray-500">任务 ID</dt>
-                  <dd class="text-gray-300 font-mono mt-0.5">{{ taskId.slice(0, 24) }}...</dd>
+                  <dd class="text-gray-300 font-mono mt-0.5">{{ (taskId ?? '').slice(0, 24) }}...</dd>
                 </div>
                 <div>
                   <dt class="text-gray-500">检测模式</dt>
@@ -306,15 +306,15 @@ const workflowSteps = [
           </div>
           <div class="bg-[#161b22] border border-[#30363d] rounded-xl p-4 text-center">
             <div class="text-2xl font-bold text-red-400">{{ findingSummary.high }}</div>
-            <div class="text-xs text-gray-500 mt-1">严重 (High)</div>
+            <div class="text-xs text-gray-500 mt-1">高 (High)</div>
           </div>
           <div class="bg-[#161b22] border border-[#30363d] rounded-xl p-4 text-center">
             <div class="text-2xl font-bold text-orange-400">{{ findingSummary.medium }}</div>
-            <div class="text-xs text-gray-500 mt-1">中等 (Medium)</div>
+            <div class="text-xs text-gray-500 mt-1">中 (Medium)</div>
           </div>
           <div class="bg-[#161b22] border border-[#30363d] rounded-xl p-4 text-center">
             <div class="text-2xl font-bold text-yellow-400">{{ findingSummary.low }}</div>
-            <div class="text-xs text-gray-500 mt-1">低危 (Low)</div>
+            <div class="text-xs text-gray-500 mt-1">低 (Low)</div>
           </div>
           <div class="bg-[#161b22] border border-[#30363d] rounded-xl p-4 text-center">
             <div class="text-2xl font-bold text-purple-400">{{ findingSummary.warnings }}</div>

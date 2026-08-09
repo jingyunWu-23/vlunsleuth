@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from itertools import count
 from typing import Dict, List, Set, Tuple
 
+from backend.agents.llm_unknown_risk_agent import LLMUnknownRiskAgent
 from backend.agents.llm_reasoning_service import LLMReasoningService
 from backend.function_risk.reasoning_gate import ReasoningSelection
 from backend.function_risk.risk_score import (
@@ -25,6 +27,7 @@ def build_findings_and_warnings(
     reasoning_selection: ReasoningSelection | None = None,
     knowledge_contexts: Dict[str, KnowledgeContext] | None = None,
     llm_service: LLMReasoningService | None = None,
+    unknown_risk_agent: LLMUnknownRiskAgent | None = None,
 ) -> Tuple[List[Finding], List[Warning]]:
     selected = {normalize_vulnerability(item) for item in (selected_vulnerabilities or [])}
     fn_by_id = {fn.function_id: fn for fn in functions}
@@ -33,6 +36,8 @@ def build_findings_and_warnings(
     store = store or JsonlKnowledgeStore()
     knowledge_contexts = knowledge_contexts or {}
     llm_service = llm_service or LLMReasoningService()
+    unknown_risk_agent = unknown_risk_agent or LLMUnknownRiskAgent()
+    finding_seq = count(1)
 
     for vector in risk_vectors[:20]:
         if reasoning_selection and not reasoning_selection.contains(vector.function_id):
@@ -50,7 +55,15 @@ def build_findings_and_warnings(
 
         grouped = group_primary_evidence(fn, vector, evidences, selected)
         warnings.extend(build_rejected_warnings(fn, vector, evidences, selected))
-        warnings.extend(build_anomaly_warnings(fn, vector, evidences))
+        unknown_findings, unknown_warnings = build_unknown_risk_findings_and_warnings(
+            fn,
+            vector,
+            evidences,
+            unknown_risk_agent,
+            finding_seq,
+        )
+        findings.extend(unknown_findings)
+        warnings.extend(unknown_warnings)
 
         for vulnerability_id, primary_evidences in grouped.items():
             if not semantic_category_allowed(fn, vulnerability_id):
@@ -88,7 +101,7 @@ def build_findings_and_warnings(
 
             finding_status = reasoning_status if reasoning_status in {"suspected", "inconclusive"} else "suspected"
             findings.append(Finding(
-                finding_id=f"F-{len(findings) + 1:04d}",
+                finding_id=f"F-{next(finding_seq):04d}",
                 scope="in_scope",
                 status=finding_status,
                 contract_name=fn.contract_name,
@@ -212,6 +225,69 @@ def build_anomaly_warnings(fn: FunctionUnit, vector: RiskVector, evidences: List
             evidence=[evidence],
         ))
     return warnings
+
+
+def build_unknown_risk_findings_and_warnings(
+    fn: FunctionUnit,
+    vector: RiskVector,
+    evidences: List[ModelEvidence],
+    unknown_risk_agent: LLMUnknownRiskAgent,
+    finding_seq,
+) -> Tuple[List[Finding], List[Warning]]:
+    anomaly_evidences = [
+        item
+        for item in evidences
+        if item.model_id.startswith("DEEPSVDD") and item.calibrated_confidence >= 0.55
+    ]
+    if not anomaly_evidences:
+        return [], []
+    known_evidences = [item for item in evidences if not item.model_id.startswith("DEEPSVDD")]
+    result = unknown_risk_agent.reason_unknown_risk(fn, vector, anomaly_evidences, known_evidences)
+    status = str(result.get("status", "inconclusive"))
+    target_vulnerability = str(result.get("target_vulnerability") or "VULN_UNKNOWN_ANOMALY")
+    confidence = float(result.get("confidence") or max(vector.r_func, vector.anomaly_score))
+
+    if status == "suspected" and target_vulnerability == "VULN_LLM_SEMANTIC_WARNING":
+        finding_evidences = merge_evidences(anomaly_evidences + supporting_evidences("VULN_UNKNOWN_ANOMALY", evidences))
+        finding = Finding(
+            finding_id=f"F-{next(finding_seq):04d}",
+            scope="in_scope",
+            status="suspected",
+            contract_name=fn.contract_name,
+            function_signature=fn.signature,
+            vulnerability_id=target_vulnerability,
+            severity=severity_from_score(max(confidence, vector.r_func, vector.anomaly_score)),
+            confidence=max(confidence, vector.r_func, vector.anomaly_score),
+            summary=str(result.get("summary") or default_finding_summary(fn, target_vulnerability, finding_evidences)),
+            evidence=finding_evidences,
+            location=result.get("location") or first_locations(finding_evidences),
+            recommendation=result.get("repair_suggestion", {}).get("strategy"),
+            risk_title=result.get("risk_title"),
+            risk_type_freeform=result.get("risk_type_freeform"),
+            trust_level=result.get("trust_level"),
+            requires_human_review=bool(result.get("requires_human_review", True)),
+            reasoning=result,
+            verification_plan=result.get("verification_plan", {}),
+            repair_suggestion=result.get("repair_suggestion", {}),
+        )
+        return [finding], []
+
+    warning = Warning(
+        warning_id=f"W-{abs(hash(fn.function_id + target_vulnerability + status)) % 100000:05d}",
+        scope="out_of_scope",
+        status="anomaly_warning",
+        contract_name=fn.contract_name,
+        function_signature=fn.signature,
+        target_vulnerability="VULN_UNKNOWN_ANOMALY",
+        score=max(vector.r_func, vector.anomaly_score, confidence),
+        summary=str(
+            result.get("summary")
+            or "DeepSVDD 检测到行为异常信号，但该信号尚未形成可解释的新漏洞假设。"
+        ),
+        recommended_action={"action": "review_anomaly", "target_vulnerability": "VULN_UNKNOWN_ANOMALY"},
+        evidence=anomaly_evidences,
+    )
+    return [], [warning]
 
 
 def make_warning(vector: RiskVector, evidence: ModelEvidence) -> Warning:

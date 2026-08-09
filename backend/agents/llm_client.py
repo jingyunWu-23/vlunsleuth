@@ -5,7 +5,35 @@ import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict
+
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - python-dotenv is optional for direct script usage.
+    load_dotenv = None
+
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+
+
+def load_simple_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+if load_dotenv is not None:
+    load_dotenv(ENV_PATH)
+else:
+    load_simple_dotenv(ENV_PATH)
 
 
 @dataclass
@@ -145,6 +173,54 @@ def build_llm_client(config: LLMConfig | None = None) -> LLMClient:
     return PlaceholderLLMClient()
 
 
+def llm_config_status(config: LLMConfig | None = None, probe: bool = False) -> Dict[str, Any]:
+    config = config or LLMConfig.from_env()
+    missing = []
+    if config.provider.lower() not in {"openai", "openai_compatible", "custom"}:
+        missing.append("SCG_LLM_PROVIDER")
+    if not config.base_url:
+        missing.append("SCG_LLM_BASE_URL")
+    if not config.api_key:
+        missing.append("SCG_LLM_API_KEY")
+    if not config.model or config.model == "fill-your-model":
+        missing.append("SCG_LLM_MODEL")
+
+    status: Dict[str, Any] = {
+        "configured": not missing,
+        "provider": config.provider,
+        "model": "" if config.model == "fill-your-model" else config.model,
+        "base_url": config.base_url,
+        "api_key_configured": bool(config.api_key),
+        "missing": missing,
+        "temperature": config.temperature,
+        "timeout_seconds": config.timeout_seconds,
+    }
+    if not probe:
+        return status
+
+    if missing:
+        status["reachable"] = False
+        status["message"] = f"Missing LLM configuration: {', '.join(missing)}"
+        return status
+
+    try:
+        client = OpenAICompatibleLLMClient(config)
+        result = client.complete_json(
+            "Return strict JSON only.",
+            {
+                "instruction": "Return {\"status\":\"ok\"}.",
+                "output_schema": {"status": "ok"},
+            },
+        )
+        status["reachable"] = True
+        status["message"] = "LLM API is reachable."
+        status["probe_result"] = result
+    except Exception as exc:
+        status["reachable"] = False
+        status["message"] = str(exc)
+    return status
+
+
 def first_vulnerability(evidence: list) -> str:
     for item in evidence:
         if item.get("vulnerability_id"):
@@ -158,6 +234,10 @@ def first_repair_strategy(knowledge_context: Dict[str, Any], vulnerability: str 
         "VULN_TIMESTAMP": "避免将 block.timestamp 作为关键决策来源；如确需时间条件，应使用更安全的时间窗口或可信预言机。",
         "VULN_DELEGATECALL": "避免对不可信目标执行 delegatecall，并通过严格访问控制和白名单限制升级或插件目标。",
         "VULN_UNCHECKED_LOW_LEVEL_CALLS": "检查低级调用返回值，并使用 require(success) 失败即回滚。",
+        "VULN_ACCESS_CONTROL": "收紧敏感函数权限，使用 onlyOwner/角色控制并避免 tx.origin 作为授权依据。",
+        "VULN_ARITHMETIC": "使用 Solidity 0.8+ 的内置溢出检查或 SafeMath，并为边界值添加回归测试。",
+        "VULN_BAD_RANDOMNESS": "不要使用 block.timestamp、block.number、blockhash 等链上可预测值生成随机数，应接入 VRF 或提交揭示方案。",
+        "VULN_LOCKED_ETHER": "为可接收 ETH 的合约提供受控提款或救援函数，并限制调用权限。",
         "VULN_CROSS_CONTRACT_RISK": "复核跨合约信任边界、目标地址可控性和调用链状态依赖。",
         "VULN_UNKNOWN_ANOMALY": "人工复核异常代码路径，并围绕高风险控制流和资产流添加针对性回归测试。",
     }

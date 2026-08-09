@@ -23,6 +23,10 @@ class Finding:
     verification_allowed: bool = True
     repair_allowed: bool = True
     recommendation: Optional[str] = None
+    risk_title: Optional[str] = None
+    risk_type_freeform: Optional[str] = None
+    trust_level: Optional[str] = None
+    requires_human_review: bool = False
     reasoning: Dict[str, Any] = field(default_factory=dict)
     verification_plan: Dict[str, Any] = field(default_factory=dict)
     repair_suggestion: Dict[str, Any] = field(default_factory=dict)

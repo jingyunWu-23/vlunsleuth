@@ -24,13 +24,13 @@ def render_markdown(report: AuditReport) -> str:
         "",
         "## 函数风险排序",
         "",
-        "| 排名 | 合约 | 函数 | 综合风险 | 静态特征 | 异常分 | GCN | 知识库 | 一致性 | 防护 |",
-        "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| 排名 | 合约 | 函数 | 综合风险 | LSTM | 静态特征 | 异常分 | GCN | 知识库 | 一致性 | 防护 |",
+        "|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for idx, vector in enumerate(report.risk_vectors[:20], 1):
         lines.append(
             f"| {idx} | {vector.contract_name} | `{vector.function_signature}` | "
-            f"{vector.r_func:.2f} | {vector.static_score:.2f} | {vector.anomaly_score:.2f} | "
+            f"{vector.r_func:.2f} | {vector.lstm_score:.2f} | {vector.static_score:.2f} | {vector.anomaly_score:.2f} | "
             f"{vector.gcn_score:.2f} | {vector.knowledge_score:.2f} | {vector.consistency_score:.2f} | "
             f"{vector.protection_score:.2f} |"
         )
@@ -135,11 +135,17 @@ def format_vulnerability_label(vulnerability: str | None) -> str:
 
 def translate_vulnerability(vulnerability: str | None) -> str:
     canonical = normalize_vulnerability(vulnerability)
+    if canonical == "VULN_LLM_SEMANTIC_WARNING":
+        return "LLM 未知语义风险"
     mapping = {
         "VULN_REENTRANCY": "重入漏洞",
         "VULN_TIMESTAMP": "时间戳依赖",
         "VULN_DELEGATECALL": "不安全 delegatecall",
         "VULN_UNCHECKED_LOW_LEVEL_CALLS": "未检查低级调用返回值",
+        "VULN_ACCESS_CONTROL": "访问控制缺陷",
+        "VULN_ARITHMETIC": "算术风险",
+        "VULN_BAD_RANDOMNESS": "不安全随机数",
+        "VULN_LOCKED_ETHER": "以太锁定风险",
         "VULN_CROSS_CONTRACT_RISK": "跨合约调用风险",
         "VULN_UNKNOWN_ANOMALY": "行为异常",
         "GENERAL_RISK": "综合高风险函数",

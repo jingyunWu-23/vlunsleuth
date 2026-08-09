@@ -8,6 +8,7 @@ import type {
   AuditReport,
   TaskEvent,
   HealthResponse,
+  LlmStatusResponse,
   User,
 } from '@/types'
 
@@ -31,6 +32,13 @@ export const authApi = {
 export const healthApi = {
   check() {
     return apiClient.get<HealthResponse>('/health')
+  },
+}
+
+// ========== LLM ==========
+export const llmApi = {
+  status(probe = false) {
+    return apiClient.get<LlmStatusResponse>('/llm/status', { params: { probe } })
   },
 }
 
