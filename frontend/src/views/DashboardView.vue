@@ -250,34 +250,38 @@ const statusLabels: Record<string, string> = {
       </div>
     </div>
 
-<!-- ====== 核心检测能力覆盖 (同宽展示) ====== -->
+<!-- ====== 多智能体协同审计能力覆盖 (同宽展示) ====== -->
     <div class="mt-6">
       <div class="bg-[#161b22] border border-[#30363d] rounded-xl p-6">
         <!-- 标题区域居中 -->
         <div class="text-center mb-6">
-          <h3 class="text-sm font-semibold text-white">核心检测能力覆盖</h3>
+          <h3 class="text-sm font-semibold text-white">多智能体协同审计核心能力</h3>
         </div>
         
-        <!-- 卡片网格：去除描述并居中对齐 -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-center">
-          <!-- 标签项 -->
-          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
-            <div class="text-xs font-medium text-gray-300">跨合约交互风险</div>
+        <!-- 卡片网格：4个智能体一一对应核心功能 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-center">
+          <!-- 漏洞检测智能体 -->
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 hover:border-blue-500/40 transition-colors">
+            <div class="text-sm font-bold text-blue-400 mb-1.5">漏洞检测智能体</div>
+            <div class="text-xs text-gray-400">跨合约风险检测与梯度粗定位</div>
           </div>
-          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
-            <div class="text-xs font-medium text-gray-300">经典重入攻击</div>
+          
+          <!-- 推理定位智能体 -->
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 hover:border-purple-500/40 transition-colors">
+            <div class="text-sm font-bold text-purple-400 mb-1.5">推理定位智能体</div>
+            <div class="text-xs text-gray-400">漏洞成因推理与代码精确定位</div>
           </div>
-          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
-            <div class="text-xs font-medium text-gray-300">危险委托调用</div>
+          
+          <!-- 结果验证智能体 -->
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 hover:border-orange-500/40 transition-colors">
+            <div class="text-sm font-bold text-orange-400 mb-1.5">结果验证智能体</div>
+            <div class="text-xs text-gray-400">代码上下文校验与风险分级</div>
           </div>
-          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
-            <div class="text-xs font-medium text-gray-300">业务逻辑与预言机</div>
-          </div>
-          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 hover:border-blue-500/40 transition-colors">
-            <div class="text-xs font-medium text-gray-300">资产流转风险</div>
-          </div>
-          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-3.5 border-l-2 border-l-purple-500 hover:border-purple-500/40 transition-colors">
-            <div class="text-xs font-medium text-purple-400">未知行为模式发现</div>
+          
+          <!-- 报告与修复智能体 -->
+          <div class="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 hover:border-green-500/40 transition-colors">
+            <div class="text-sm font-bold text-green-400 mb-1.5">报告与修复智能体</div>
+            <div class="text-xs text-gray-400">结构化审计报告与多版本代码修复</div>
           </div>
         </div>
       </div>

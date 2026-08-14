@@ -2,12 +2,14 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuditStore } from '@/stores/audit'
+import NewTaskDialog from '@/components/dashboard/NewTaskDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
 const auditStore = useAuditStore()
 
 const isCollapsed = ref(false)
+const showNewTaskDialog = ref(false)
 
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
@@ -60,8 +62,9 @@ const navItems = computed<NavItem[]>(() => [
 
     <!-- New Task Button -->
     <div class="px-3 py-3" v-if="!isCollapsed">
+      <!-- 3. 修改：将点击事件绑定到控制弹窗显示的变量上 -->
       <button
-        @click="navigateTo('/')"
+        @click="showNewTaskDialog = true"
         class="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
       >
         <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -129,5 +132,10 @@ const navItems = computed<NavItem[]>(() => [
         </svg>
       </button>
     </div>
+    <NewTaskDialog
+      v-if="showNewTaskDialog"
+      @close="showNewTaskDialog = false"
+      @created="(taskId) => { showNewTaskDialog = false; router.push(`/audit/${taskId}`) }"
+    />
   </aside>
 </template>
