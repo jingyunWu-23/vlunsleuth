@@ -93,7 +93,37 @@ const navItems = computed<NavItem[]>(() => [
     <!-- Nav Menu -->
     <nav class="flex-1 overflow-y-auto py-3 px-3 space-y-1" :class="{ 'px-2': isCollapsed }">
       <button
-        v-for="item in navItems"
+        v-for="item in navItems.slice(0, 1)"
+        :key="item.label"
+        @click="navigateTo(item.path)"
+        :class="[
+          'w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg transition-colors text-left',
+          isActive(item.path)
+            ? 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
+            : 'text-gray-400 hover:text-gray-200 hover:bg-[#1c2128]',
+        ]"
+      >
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" :d="item.icon" />
+        </svg>
+        <span v-if="!isCollapsed" class="flex-1 text-left">{{ item.label }}</span>
+      </button>
+      <button
+        @click="navigateTo(auditStore.currentTask?.task_id ? `/agents/${auditStore.currentTask.task_id}` : '/tasks')"
+        :class="[
+          'w-full flex items-center gap-3 px-3 py-2.5 text-sm rounded-lg transition-colors text-left',
+          route.path.startsWith('/agents')
+            ? 'bg-blue-600/20 text-blue-400 border border-blue-600/30'
+            : 'text-gray-400 hover:text-gray-200 hover:bg-[#1c2128]',
+        ]"
+      >
+        <svg class="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5m4.75-11.396a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19 14.5M5 14.5l1.5 5.25A1.5 1.5 0 007.943 21h8.114a1.5 1.5 0 001.443-1.25L19 14.5M5 14.5h14" />
+        </svg>
+        <span v-if="!isCollapsed" class="flex-1 text-left">智能体运行</span>
+      </button>
+      <button
+        v-for="item in navItems.slice(1)"
         :key="item.label"
         @click="navigateTo(item.path)"
         :class="[

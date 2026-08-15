@@ -13,6 +13,7 @@ from threading import Lock
 from typing import Any, Dict, List, Optional
 
 from backend.agents.llm_client import llm_config_status
+from backend.audit_logging import build_audit_logger
 from backend.api.security import hash_password, hash_token, new_access_token, session_expires_at, verify_password
 from backend.persistence import get_store
 from backend.reporting.markdown_report import write_markdown
@@ -190,6 +191,7 @@ if FastAPI is not None:
             need_repair=request.need_repair,
             background_risk_screening=request.background_risk_screening,
             background_screening_action=request.background_screening_action,
+            disable_rag=request.disable_rag,
             output_dir=str(task_output_dir(task_id)),
         )
         create_task_record(task_id, normalized, source_kind="path", user_id=user_id(current_user))
@@ -208,6 +210,7 @@ if FastAPI is not None:
         need_repair: bool = Form(True),
         background_risk_screening: bool = Form(True),
         background_screening_action: str = Form("warn_only"),
+        disable_rag: bool = Form(False),
         async_run: bool = Form(True),
         current_user: Optional[dict] = Depends(optional_current_user),
     ) -> dict:
@@ -233,6 +236,7 @@ if FastAPI is not None:
             need_repair=need_repair,
             background_risk_screening=background_risk_screening,
             background_screening_action=background_screening_action,
+            disable_rag=disable_rag,
             output_dir=str(task_output_dir(task_id)),
         )
         create_task_record(
@@ -403,6 +407,13 @@ if FastAPI is not None:
         ]
         return {"task_id": task_id, "artifacts": artifacts}
 
+    @app.get("/api/v1/audits/{task_id}/agents")
+    def get_agent_runtime(task_id: str, current_user: Optional[dict] = Depends(optional_current_user)) -> dict:
+        ensure_task_loaded(task_id)
+        record = get_record_or_404(task_id)
+        check_task_access(record, current_user)
+        return build_agent_runtime_response(task_id, record)
+
 else:
     app = None
 
@@ -416,19 +427,34 @@ def submit_audit(request: AuditRequest) -> None:
 
 
 def run_task(request: AuditRequest) -> None:
+    audit_logger = build_audit_logger(request.task_id, task_output_dir(request.task_id))
     if is_cancel_requested(request.task_id):
+        audit_logger.event("task_cancelled", "Task was cancelled before starting.")
         mark_task(request.task_id, status="cancelled", finished_at=utc_now(), updated_at=utc_now())
         remove_future(request.task_id)
         return
     mark_task(request.task_id, status="running", started_at=utc_now(), updated_at=utc_now())
     output_dir = task_output_dir(request.task_id)
     output_dir.mkdir(parents=True, exist_ok=True)
+    audit_logger.event("task_started", "Task execution started.", output_dir=str(output_dir))
     try:
-        report = run_audit(request, progress_callback=lambda progress, phase: update_task_progress(request.task_id, progress, phase))
+        report = run_audit(
+            request,
+            progress_callback=lambda progress, phase: update_task_progress(request.task_id, progress, phase),
+            audit_logger=audit_logger,
+        )
         json_path = output_dir / f"{request.task_id}.json"
         markdown_path = output_dir / f"{request.task_id}.md"
+        report_started = audit_logger.phase_start("report_generation", "报告生成")
         json_path.write_text(json.dumps(asdict(report), ensure_ascii=False, indent=2), encoding="utf-8")
         write_markdown(report, markdown_path)
+        audit_logger.phase_end("report_generation", "报告生成", report_started)
+        audit_logger.event(
+            "artifacts_written",
+            "Report artifacts written.",
+            report_json=str(json_path),
+            report_markdown=str(markdown_path),
+        )
         contract_summary = report.metadata.get("contract_summary", {})
         summary = {
             "findings": len(report.findings),
@@ -442,6 +468,7 @@ def run_task(request: AuditRequest) -> None:
             "model_counts": report.metadata.get("evidence_center", {}).get("model_counts", {}),
         }
         if is_cancel_requested(request.task_id):
+            audit_logger.event("task_cancelled", "Task was cancelled after report generation.")
             mark_task(
                 request.task_id,
                 status="cancelled",
@@ -460,8 +487,10 @@ def run_task(request: AuditRequest) -> None:
             report_markdown=str(markdown_path),
             summary=summary,
         )
+        audit_logger.event("task_succeeded", "Task execution succeeded.", summary=summary)
         persist_report_artifacts(request.task_id, asdict(report), json_path, markdown_path)
     except Exception as exc:
+        audit_logger.exception("task_failed", exc)
         if is_cancel_requested(request.task_id):
             mark_task(
                 request.task_id,
@@ -761,6 +790,384 @@ def persist_report_artifacts(task_id: str, report_json: dict, json_path: Path, m
                 )
     except Exception as exc:
         mark_task(task_id, persistence_error=f"{type(exc).__name__}: {exc}", updated_at=utc_now())
+
+
+AGENT_DEFINITIONS = [
+    {
+        "agent_id": "detector",
+        "name": "检测智能体",
+        "description": "负责源码解析、静态特征提取、多模型推理与证据生成。",
+        "event_prefixes": {
+            "task_started",
+            "audit_start",
+            "source_loaded",
+            "analysis_built",
+            "workflow_built",
+            "static_evidence_registered",
+            "adapters_selected",
+            "adapter_start",
+            "adapter_end",
+            "model_inference_completed",
+        },
+        "phase_names": {
+            "source_loading",
+            "preprocessing_and_feature_extraction",
+            "workflow_routing",
+            "static_evidence_registration",
+            "model_adapter_inference",
+        },
+    },
+    {
+        "agent_id": "reasoning",
+        "name": "推理智能体",
+        "description": "负责候选函数筛选、RAG 上下文检索、漏洞成因推理与定位结论生成。",
+        "event_prefixes": {
+            "reasoning_gate_selected",
+            "knowledge_retrieved",
+            "knowledge_skipped",
+            "risk_scoring_completed",
+            "reasoning_localization_completed",
+        },
+        "phase_names": {
+            "initial_risk_scoring_and_reasoning_gate",
+            "knowledge_retrieval",
+            "final_risk_scoring",
+            "reasoning_localization",
+        },
+    },
+    {
+        "agent_id": "verification",
+        "name": "验证智能体",
+        "description": "负责 Slither 与 LLM 验证，判断候选漏洞是否被确认、排除或仍需人工复核。",
+        "event_prefixes": {"verification_completed", "verification_skipped"},
+        "phase_names": {"verification"},
+    },
+    {
+        "agent_id": "repair",
+        "name": "修复智能体",
+        "description": "负责汇总修复策略、补丁模式与复测建议。",
+        "event_prefixes": set(),
+        "phase_names": set(),
+    },
+    {
+        "agent_id": "report",
+        "name": "报告智能体",
+        "description": "负责汇总检测、推理、验证和修复结果，生成 JSON/Markdown 报告产物。",
+        "event_prefixes": {"artifacts_written", "task_succeeded"},
+        "phase_names": {"report_generation"},
+    },
+]
+
+
+def build_agent_runtime_response(task_id: str, record: dict) -> dict:
+    output_dir = task_output_dir(task_id)
+    report = read_task_report(task_id)
+    logs = read_audit_log(output_dir / "audit.log")
+    agents = []
+    for definition in AGENT_DEFINITIONS:
+        agent_logs = select_agent_logs(logs, definition)
+        contribution = build_agent_contribution(definition["agent_id"], task_id, record, report, output_dir)
+        agents.append({
+            "agent_id": definition["agent_id"],
+            "name": definition["name"],
+            "description": definition["description"],
+            "status": infer_agent_status(definition["agent_id"], agent_logs, contribution, record, report),
+            "started_at": first_log_time(agent_logs, "phase_start") or first_log_time(agent_logs),
+            "finished_at": last_log_time(agent_logs, "phase_end") or last_log_time(agent_logs),
+            "duration_seconds": sum_phase_seconds(agent_logs),
+            "inputs": contribution.get("inputs", {}),
+            "outputs": contribution.get("outputs", {}),
+            "report_contributions": contribution.get("report_contributions", []),
+            "logs": agent_logs,
+        })
+    return {
+        "task_id": task_id,
+        "status": record.get("status"),
+        "audit_log_path": str(output_dir / "audit.log"),
+        "agents": agents,
+    }
+
+
+def read_task_report(task_id: str) -> dict:
+    report_path = task_output_dir(task_id) / f"{task_id}.json"
+    if not report_path.exists():
+        return {}
+    try:
+        return json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def read_audit_log(path: Path) -> List[dict]:
+    if not path.exists():
+        return []
+    events: List[dict] = []
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if not line.strip():
+            continue
+        try:
+            events.append(json.loads(line))
+        except Exception:
+            events.append({"event": "raw_log", "message": line})
+    return events
+
+
+def select_agent_logs(logs: List[dict], definition: dict) -> List[dict]:
+    prefixes = definition.get("event_prefixes", set())
+    phases = definition.get("phase_names", set())
+    selected = []
+    for item in logs:
+        event = item.get("event")
+        phase = item.get("phase")
+        if event in prefixes or phase in phases:
+            selected.append(item)
+    return selected
+
+
+def build_agent_contribution(agent_id: str, task_id: str, record: dict, report: dict, output_dir: Path) -> dict:
+    if agent_id == "detector":
+        return detector_contribution(report)
+    if agent_id == "reasoning":
+        return reasoning_contribution(report)
+    if agent_id == "verification":
+        return verification_contribution(report)
+    if agent_id == "repair":
+        return repair_contribution(report)
+    if agent_id == "report":
+        return report_contribution(task_id, record, report, output_dir)
+    return {}
+
+
+def detector_contribution(report: dict) -> dict:
+    metadata = report.get("metadata", {})
+    evidence_center = metadata.get("evidence_center", {})
+    adapter_results = metadata.get("adapter_results", {})
+    evidences = collect_report_evidences(report)
+    evidence_samples = [
+        {
+            "evidence_id": item.get("evidence_id"),
+            "model_id": item.get("model_id"),
+            "vulnerability_id": item.get("vulnerability_id"),
+            "confidence": item.get("calibrated_confidence"),
+            "contract_name": item.get("contract_name"),
+            "function_signature": item.get("function_signature"),
+            "location_candidates": item.get("location_candidates", []),
+        }
+        for item in evidences[:30]
+    ]
+    return {
+        "inputs": {
+            "source_files": metadata.get("source_files"),
+            "contracts": metadata.get("contracts"),
+            "functions": metadata.get("functions"),
+            "formal_models": (report.get("workflow") or {}).get("formal_models", []),
+        },
+        "outputs": {
+            "evidence_count": metadata.get("evidence_count", evidence_center.get("evidence_count")),
+            "model_counts": evidence_center.get("model_counts", {}),
+            "adapter_results": {
+                key: {
+                    "status": value.get("status"),
+                    "evidence_count": value.get("evidence_count"),
+                    "warnings": value.get("warnings", []),
+                }
+                for key, value in adapter_results.items()
+            },
+        },
+        "report_contributions": [
+            {
+                "type": "evidence",
+                "title": "模型与静态证据",
+                "description": "最终 finding/warning 中引用的模型、静态规则与知识库证据。",
+                "items": evidence_samples,
+            }
+        ],
+    }
+
+
+def reasoning_contribution(report: dict) -> dict:
+    metadata = report.get("metadata", {})
+    findings = report.get("findings", [])
+    warnings = report.get("warnings", [])
+    reasoning_items = [
+        {
+            "finding_id": item.get("finding_id"),
+            "vulnerability_id": item.get("vulnerability_id"),
+            "status": item.get("status"),
+            "summary": item.get("summary"),
+            "reasoning": item.get("reasoning", {}),
+            "location": item.get("location", []),
+            "knowledge_count": len(item.get("knowledge", []) or []),
+        }
+        for item in findings
+    ]
+    return {
+        "inputs": {
+            "risk_vector_count": len(report.get("risk_vectors", [])),
+            "reasoning_gate": metadata.get("reasoning_gate", {}),
+            "rag_enabled": metadata.get("rag_enabled"),
+        },
+        "outputs": {
+            "finding_count": len(findings),
+            "warning_count": len(warnings),
+            "selected_count": metadata.get("reasoning_gate", {}).get("selected_count"),
+        },
+        "report_contributions": [
+            {
+                "type": "reasoning",
+                "title": "漏洞判断与成因推理",
+                "description": "推理智能体给出的是否构成漏洞、漏洞原因、定位和知识库依据。",
+                "items": reasoning_items,
+            },
+            {
+                "type": "warnings",
+                "title": "潜在风险与被排除候选",
+                "description": "未进入正式 finding 或被降级的风险候选。",
+                "items": warnings[:30],
+            },
+        ],
+    }
+
+
+def verification_contribution(report: dict) -> dict:
+    metadata = report.get("metadata", {})
+    findings = report.get("findings", [])
+    verification_items = [
+        {
+            "finding_id": item.get("finding_id"),
+            "vulnerability_id": item.get("vulnerability_id"),
+            "status": item.get("status"),
+            "verification_plan": item.get("verification_plan", {}),
+        }
+        for item in findings
+    ]
+    return {
+        "inputs": {"finding_count": len(findings)},
+        "outputs": metadata.get("verification", {}),
+        "report_contributions": [
+            {
+                "type": "verification",
+                "title": "验证结果",
+                "description": "Slither 与 LLM 验证智能体写入 finding.verification_plan 的结论。",
+                "items": verification_items,
+            }
+        ],
+    }
+
+
+def repair_contribution(report: dict) -> dict:
+    findings = report.get("findings", [])
+    repair_items = [
+        {
+            "finding_id": item.get("finding_id"),
+            "vulnerability_id": item.get("vulnerability_id"),
+            "summary": item.get("summary"),
+            "recommendation": item.get("recommendation"),
+            "repair_suggestion": item.get("repair_suggestion", {}),
+        }
+        for item in findings
+        if item.get("repair_suggestion") or item.get("recommendation")
+    ]
+    return {
+        "inputs": {"finding_count": len(findings)},
+        "outputs": {"repair_suggestion_count": len(repair_items)},
+        "report_contributions": [
+            {
+                "type": "repair",
+                "title": "修复建议",
+                "description": "报告中每个 finding 对应的修复策略、补丁模式和复测建议。",
+                "items": repair_items,
+            }
+        ],
+    }
+
+
+def report_contribution(task_id: str, record: dict, report: dict, output_dir: Path) -> dict:
+    artifacts = []
+    for filename in [f"{task_id}.json", f"{task_id}.md", "audit.log", "slither_results.json"]:
+        path = output_dir / filename
+        if path.exists():
+            artifacts.append({"name": filename, "path": str(path), "size": path.stat().st_size})
+    return {
+        "inputs": {
+            "findings": len(report.get("findings", [])),
+            "warnings": len(report.get("warnings", [])),
+            "metadata_keys": sorted((report.get("metadata") or {}).keys()),
+        },
+        "outputs": {
+            "report_json": record.get("report_json"),
+            "report_markdown": record.get("report_markdown"),
+            "artifact_count": len(artifacts),
+        },
+        "report_contributions": [
+            {
+                "type": "artifact",
+                "title": "报告产物",
+                "description": "最终 JSON、Markdown、审计日志和验证结果文件。",
+                "items": artifacts,
+            }
+        ],
+    }
+
+
+def collect_report_evidences(report: dict) -> List[dict]:
+    seen = set()
+    result = []
+    for container in [report.get("findings", []), report.get("warnings", [])]:
+        for item in container:
+            for evidence in item.get("evidence", []) or []:
+                evidence_id = evidence.get("evidence_id")
+                if evidence_id in seen:
+                    continue
+                seen.add(evidence_id)
+                result.append(evidence)
+    return result
+
+
+def infer_agent_status(agent_id: str, logs: List[dict], contribution: dict, record: dict, report: dict) -> str:
+    if any(item.get("event") in {"phase_error", "task_failed"} for item in logs):
+        return "failed"
+    if not logs and report:
+        if agent_id == "detector" and contribution.get("outputs", {}).get("evidence_count"):
+            return "succeeded"
+        if agent_id == "reasoning" and (
+            contribution.get("outputs", {}).get("finding_count", 0) is not None
+            or contribution.get("outputs", {}).get("warning_count", 0) is not None
+        ):
+            return "succeeded"
+        if agent_id == "report" and contribution.get("outputs", {}).get("artifact_count", 0):
+            return "succeeded"
+    if agent_id == "verification" and contribution.get("outputs"):
+        return "succeeded"
+    if agent_id == "verification" and report and not contribution.get("outputs"):
+        return "skipped"
+    if agent_id == "repair":
+        return "succeeded" if contribution.get("outputs", {}).get("repair_suggestion_count", 0) else "skipped"
+    if logs:
+        if any(item.get("event") == "phase_start" for item in logs) and not any(item.get("event") == "phase_end" for item in logs):
+            return "running" if record.get("status") == "running" else "incomplete"
+        return "succeeded"
+    if record.get("status") in ACTIVE_STATUSES:
+        return "pending"
+    return "skipped"
+
+
+def first_log_time(logs: List[dict], event: str | None = None) -> str | None:
+    for item in logs:
+        if event is None or item.get("event") == event:
+            return item.get("time")
+    return None
+
+
+def last_log_time(logs: List[dict], event: str | None = None) -> str | None:
+    for item in reversed(logs):
+        if event is None or item.get("event") == event:
+            return item.get("time")
+    return None
+
+
+def sum_phase_seconds(logs: List[dict]) -> float:
+    return round(sum(float(item.get("seconds") or 0) for item in logs if item.get("event") == "phase_end"), 4)
 
 
 def delete_persisted_task(task_id: str) -> None:

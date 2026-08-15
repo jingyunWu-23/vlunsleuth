@@ -145,6 +145,7 @@ export interface AuditRequest {
   need_repair?: boolean
   background_risk_screening?: boolean
   background_screening_action?: 'mark_warning' | 'audit'
+  disable_rag?: boolean
   async_run?: boolean
 }
 
@@ -336,6 +337,48 @@ export interface LlmStatusResponse {
   timeout_seconds: number
   reachable?: boolean
   message?: string
+}
+
+// ============= Agent Runtime =============
+export type AgentRuntimeStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'incomplete'
+
+export interface AgentRuntimeLogEvent {
+  time?: string
+  task_id?: string
+  event: string
+  message: string
+  phase?: string
+  label?: string
+  seconds?: number
+  [key: string]: unknown
+}
+
+export interface AgentReportContribution {
+  type: string
+  title: string
+  description: string
+  items: unknown[]
+}
+
+export interface AgentRuntime {
+  agent_id: string
+  name: string
+  description: string
+  status: AgentRuntimeStatus
+  started_at?: string
+  finished_at?: string
+  duration_seconds: number
+  inputs: Record<string, unknown>
+  outputs: Record<string, unknown>
+  report_contributions: AgentReportContribution[]
+  logs: AgentRuntimeLogEvent[]
+}
+
+export interface AgentRuntimeResponse {
+  task_id: string
+  status: TaskStatus
+  audit_log_path: string
+  agents: AgentRuntime[]
 }
 
 // ============= Call Graph =============

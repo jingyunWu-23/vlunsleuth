@@ -9,6 +9,7 @@ import type {
   TaskEvent,
   HealthResponse,
   LlmStatusResponse,
+  AgentRuntimeResponse,
   User,
 } from '@/types'
 
@@ -95,5 +96,9 @@ export const reportsApi = {
 
   getArtifacts(taskId: string) {
     return apiClient.get(`/audits/${taskId}/artifacts`)
+  },
+
+  getAgents(taskId: string) {
+    return apiClient.get<AgentRuntimeResponse>(`/audits/${taskId}/agents`)
   },
 }

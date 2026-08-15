@@ -7,6 +7,7 @@ from time import perf_counter
 from pathlib import Path
 from typing import Any, Callable
 
+from backend.audit_logging import AuditLogger, NullAuditLogger, build_audit_logger
 from backend.agents.reasoning_localization_agent import build_findings_and_warnings
 from backend.agents.slither_verification_agent import verify_report_with_slither
 from backend.evidence.evidence_center import EvidenceCenter
@@ -69,54 +70,128 @@ PHASE_PROGRESS = {
 }
 
 
-def run_audit(request: AuditRequest, progress_callback: ProgressCallback | None = None) -> AuditReport:
+def run_audit(
+    request: AuditRequest,
+    progress_callback: ProgressCallback | None = None,
+    audit_logger: AuditLogger | NullAuditLogger | None = None,
+) -> AuditReport:
     timer = PhaseTimer()
-    with progress_phase(timer, "source_loading", progress_callback):
+    logger = audit_logger or build_audit_logger(request.task_id, request.output_dir)
+    logger.event(
+        "audit_start",
+        "Audit pipeline started.",
+        mode=request.mode,
+        source_path=request.source_path,
+        target_vulnerabilities=request.target_vulnerabilities,
+        need_verification=request.need_verification,
+        need_repair=request.need_repair,
+        rag_enabled=not request.disable_rag,
+    )
+    with progress_phase(timer, "source_loading", progress_callback, logger):
         sources = load_sources(request.source_path)
-    with progress_phase(timer, "preprocessing_and_feature_extraction", progress_callback):
+        logger.event("source_loaded", "Source files loaded.", source_count=len(sources))
+    with progress_phase(timer, "preprocessing_and_feature_extraction", progress_callback, logger):
         target = request.target_vulnerabilities[0] if request.target_vulnerabilities else None
         analysis = build_analysis_input(request.task_id, sources, target_vulnerability=target)
-    with progress_phase(timer, "workflow_routing", progress_callback):
+        logger.event(
+            "analysis_built",
+            "Static preprocessing and feature extraction completed.",
+            contracts=len(analysis.contracts),
+            functions=len(analysis.functions),
+            call_graph_edges=sum(len(items) for items in analysis.call_graph.values()),
+        )
+    with progress_phase(timer, "workflow_routing", progress_callback, logger):
         workflow = build_workflow(request, analysis)
+        logger.event(
+            "workflow_built",
+            "Workflow selected.",
+            formal_models=workflow.formal_models,
+            agents=workflow.agents,
+            background_screening=workflow.background_screening,
+        )
 
     center = EvidenceCenter()
-    with progress_phase(timer, "static_evidence_registration", progress_callback):
+    with progress_phase(timer, "static_evidence_registration", progress_callback, logger):
         center.register_functions(analysis.functions)
         center.add_static_evidence(analysis.functions, task_id=request.task_id)
-    with progress_phase(timer, "model_adapter_inference", progress_callback):
+        logger.event(
+            "static_evidence_registered",
+            "Static evidence registered.",
+            evidence_count=len(center.all()),
+            model_counts=center.summary().get("model_counts", {}),
+        )
+    with progress_phase(timer, "model_adapter_inference", progress_callback, logger):
         registry = build_default_registry(target_vulnerabilities=request.target_vulnerabilities or None)
         selected_adapters = registry.select_for_workflow(workflow.formal_models)
-        evidences, adapter_results = execute_adapters(selected_adapters, analysis)
+        logger.event(
+            "adapters_selected",
+            "Model adapters selected.",
+            adapter_ids=[adapter.adapter_id for adapter in selected_adapters],
+            formal_models=workflow.formal_models,
+        )
+        evidences, adapter_results = execute_adapters(selected_adapters, analysis, logger=logger)
         center.add_many(evidences)
+        logger.event(
+            "model_inference_completed",
+            "Model adapter inference completed.",
+            evidence_count=len(evidences),
+            total_evidence_count=len(center.all()),
+            adapter_statuses={result.adapter_id: result.status for result in adapter_results},
+        )
 
-    with progress_phase(timer, "initial_risk_scoring_and_reasoning_gate", progress_callback):
+    with progress_phase(timer, "initial_risk_scoring_and_reasoning_gate", progress_callback, logger):
         initial_risk_vectors = compute_risk_vectors(
             analysis.functions,
             center.grouped(),
             selected_vulnerabilities=request.target_vulnerabilities,
         )
         reasoning_selection = select_reasoning_targets(initial_risk_vectors)
+        logger.event(
+            "reasoning_gate_selected",
+            "Reasoning candidates selected.",
+            risk_vector_count=len(initial_risk_vectors),
+            selected_count=len(reasoning_selection.selected_function_ids),
+            selected_function_ids=sorted(reasoning_selection.selected_function_ids),
+        )
 
-    with progress_phase(timer, "knowledge_retrieval", progress_callback):
-        store = JsonlKnowledgeStore()
-        fn_by_id = {fn.function_id: fn for fn in analysis.functions}
-        preliminary_vector_by_id = {vector.function_id: vector for vector in initial_risk_vectors}
-        knowledge_contexts = {}
-        for function_id in reasoning_selection.selected_function_ids:
-            fn = fn_by_id.get(function_id)
-            if not fn:
-                continue
-            context = build_knowledge_context(store, fn, preliminary_vector_by_id.get(function_id), top_k=5)
-            knowledge_contexts[function_id] = context
-            center.add_knowledge_evidence(fn, context.items, task_id=request.task_id)
+    store = None
+    knowledge_contexts = {}
+    if not request.disable_rag:
+        with progress_phase(timer, "knowledge_retrieval", progress_callback, logger):
+            store = JsonlKnowledgeStore()
+            fn_by_id = {fn.function_id: fn for fn in analysis.functions}
+            preliminary_vector_by_id = {vector.function_id: vector for vector in initial_risk_vectors}
+            for function_id in reasoning_selection.selected_function_ids:
+                fn = fn_by_id.get(function_id)
+                if not fn:
+                    continue
+                context = build_knowledge_context(store, fn, preliminary_vector_by_id.get(function_id), top_k=5)
+                knowledge_contexts[function_id] = context
+                center.add_knowledge_evidence(fn, context.items, task_id=request.task_id)
+            logger.event(
+                "knowledge_retrieved",
+                "RAG knowledge retrieval completed.",
+                context_count=len(knowledge_contexts),
+                rag_evidence_count=sum(
+                    1 for evidence in center.all() if evidence.model_id == "RAG_KNOWLEDGE"
+                ),
+            )
+    else:
+        logger.event("knowledge_skipped", "RAG knowledge retrieval skipped.", reason="disable_rag=true")
 
-    with progress_phase(timer, "final_risk_scoring", progress_callback):
+    with progress_phase(timer, "final_risk_scoring", progress_callback, logger):
         risk_vectors = compute_risk_vectors(
             analysis.functions,
             center.grouped(),
             selected_vulnerabilities=request.target_vulnerabilities,
         )
-    with progress_phase(timer, "reasoning_localization", progress_callback):
+        logger.event(
+            "risk_scoring_completed",
+            "Final risk scoring completed.",
+            risk_vector_count=len(risk_vectors),
+            top_risk=max((vector.r_func for vector in risk_vectors), default=0.0),
+        )
+    with progress_phase(timer, "reasoning_localization", progress_callback, logger):
         findings, warnings = build_findings_and_warnings(
             analysis.functions,
             risk_vectors,
@@ -125,6 +200,13 @@ def run_audit(request: AuditRequest, progress_callback: ProgressCallback | None 
             selected_vulnerabilities=request.target_vulnerabilities,
             reasoning_selection=reasoning_selection,
             knowledge_contexts=knowledge_contexts,
+            enable_rag=not request.disable_rag,
+        )
+        logger.event(
+            "reasoning_localization_completed",
+            "Reasoning localization completed.",
+            finding_count=len(findings),
+            warning_count=len(warnings),
         )
     contract_summary = build_contract_summary(analysis.contracts, risk_vectors, findings, warnings)
     report = AuditReport(
@@ -140,6 +222,7 @@ def run_audit(request: AuditRequest, progress_callback: ProgressCallback | None 
             "functions": len(analysis.functions),
             "contract_summary": contract_summary,
             "evidence_count": len(center.all()),
+            "rag_enabled": not request.disable_rag,
             "evidence_center": center.summary(),
             "reasoning_gate": {
                 "max_candidates": reasoning_selection.max_candidates,
@@ -149,10 +232,11 @@ def run_audit(request: AuditRequest, progress_callback: ProgressCallback | None 
             },
             "registered_adapters": registry.describe(),
             "adapter_results": adapter_results_to_metadata(adapter_results),
+            "audit_log": str(getattr(logger, "path", "")),
         },
     )
     if request.need_verification:
-        with progress_phase(timer, "verification", progress_callback):
+        with progress_phase(timer, "verification", progress_callback, logger):
             verification_output_dir = Path(request.output_dir) if request.output_dir else None
             report.metadata["verification"] = {
                 "slither": verify_report_with_slither(
@@ -162,17 +246,51 @@ def run_audit(request: AuditRequest, progress_callback: ProgressCallback | None 
                     output_dir=verification_output_dir,
                 )
             }
+            slither = report.metadata["verification"]["slither"]
+            logger.event(
+                "verification_completed",
+                "Slither verification completed.",
+                status=slither.get("status"),
+                detector_count=slither.get("detector_count"),
+                finding_updates=len(slither.get("finding_updates", [])),
+                artifact=slither.get("artifact"),
+                error=slither.get("error"),
+            )
+    else:
+        logger.event("verification_skipped", "Verification skipped.", reason="need_verification=false")
     report.metadata["phase_timings"] = timer.summary()
+    logger.event(
+        "audit_completed",
+        "Audit pipeline completed.",
+        findings=len(report.findings),
+        warnings=len(report.warnings),
+        evidence_count=report.metadata.get("evidence_count"),
+        phase_timings=report.metadata["phase_timings"],
+    )
     return report
 
 
 @contextmanager
-def progress_phase(timer: PhaseTimer, name: str, callback: ProgressCallback | None):
+def progress_phase(
+    timer: PhaseTimer,
+    name: str,
+    callback: ProgressCallback | None,
+    logger: AuditLogger | NullAuditLogger | None = None,
+):
     start, end, label = PHASE_PROGRESS.get(name, (20, 95, name))
     emit_progress(callback, start, label)
-    with timer.phase(name):
-        yield
-    emit_progress(callback, end, label)
+    logger_started = logger.phase_start(name, label) if logger else None
+    try:
+        with timer.phase(name):
+            yield
+    except Exception as exc:
+        if logger:
+            logger.exception("phase_error", exc, phase=name, label=label)
+        raise
+    else:
+        if logger and logger_started is not None:
+            logger.phase_end(name, label, logger_started)
+        emit_progress(callback, end, label)
 
 
 def emit_progress(callback: ProgressCallback | None, progress: int, phase: str) -> None:
@@ -268,6 +386,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", default="full_audit")
     parser.add_argument("--target", action="append", default=[])
     parser.add_argument("--output-dir", default="backend_outputs")
+    parser.add_argument("--disable-rag", action="store_true", help="Skip RAG knowledge retrieval and RAG evidence.")
     return parser.parse_args()
 
 
@@ -278,6 +397,7 @@ def main() -> None:
         source_path=args.source_path,
         mode=args.mode,
         target_vulnerabilities=args.target,
+        disable_rag=args.disable_rag,
         output_dir=args.output_dir,
     )
     report = run_audit(request)

@@ -28,12 +28,13 @@ def build_findings_and_warnings(
     knowledge_contexts: Dict[str, KnowledgeContext] | None = None,
     llm_service: LLMReasoningService | None = None,
     unknown_risk_agent: LLMUnknownRiskAgent | None = None,
+    enable_rag: bool = True,
 ) -> Tuple[List[Finding], List[Warning]]:
     selected = {normalize_vulnerability(item) for item in (selected_vulnerabilities or [])}
     fn_by_id = {fn.function_id: fn for fn in functions}
     findings: List[Finding] = []
     warnings: List[Warning] = []
-    store = store or JsonlKnowledgeStore()
+    store = store or (JsonlKnowledgeStore() if enable_rag else None)
     knowledge_contexts = knowledge_contexts or {}
     llm_service = llm_service or LLMReasoningService()
     unknown_risk_agent = unknown_risk_agent or LLMUnknownRiskAgent()
@@ -50,7 +51,7 @@ def build_findings_and_warnings(
             continue
 
         query = f"{fn.contract_name} {fn.name} {' '.join(fn.features.get('dangerous_apis', []))} {fn.code[:800]}"
-        knowledge = store.search(query, top_k=3, agent="reasoning")
+        knowledge = store.search(query, top_k=3, agent="reasoning") if store is not None else []
         knowledge_context = knowledge_contexts.get(vector.function_id)
 
         grouped = group_primary_evidence(fn, vector, evidences, selected)

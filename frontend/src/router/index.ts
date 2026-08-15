@@ -31,6 +31,11 @@ const router = createRouter({
           component: () => import('@/views/AuditDetailView.vue'),
         },
         {
+          path: 'agents/:taskId?',
+          name: 'AgentRuntime',
+          component: () => import('@/views/AgentRuntimeView.vue'),
+        },
+        {
           path: 'cross-contract',
           name: 'CrossContract',
           component: () => import('@/views/CrossContractView.vue'),

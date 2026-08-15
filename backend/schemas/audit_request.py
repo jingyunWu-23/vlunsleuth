@@ -17,4 +17,5 @@ class AuditRequest:
     need_repair: bool = True
     background_risk_screening: bool = True
     background_screening_action: str = "warn_only"
+    disable_rag: bool = False
     output_dir: Optional[str] = None
