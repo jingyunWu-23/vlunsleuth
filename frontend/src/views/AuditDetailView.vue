@@ -1,19 +1,34 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuditStore } from '@/stores/audit'
 import TopCards from '@/components/dashboard/TopCards.vue'
 import TimelinePanel from '@/components/analytics/TimelinePanel.vue'
 import RiskRankingTable from '@/components/analytics/RiskRankingTable.vue'
 import RiskWarningList from '@/components/analytics/RiskWarningList.vue'
+import ReasoningPathPanel from '@/components/panels/ReasoningPathPanel.vue'
 
 const route = useRoute()
 const auditStore = useAuditStore()
 const taskId = route.params.taskId as string
 
-const activeBottomTab = ref<'timeline' | 'ranking' | 'warnings'>('ranking')
+const TAB_KEYS = ['timeline', 'ranking', 'warnings', 'reasoning'] as const
+type BottomTabKey = (typeof TAB_KEYS)[number]
+
+const activeBottomTab = ref<BottomTabKey>('ranking')
+
+function applyTabFromQuery() {
+  const tab = route.query.tab
+  activeBottomTab.value =
+    typeof tab === 'string' && (TAB_KEYS as readonly string[]).includes(tab)
+      ? (tab as BottomTabKey)
+      : 'ranking'
+}
+
+watch(() => route.query.tab, applyTabFromQuery)
 
 onMounted(async () => {
+  applyTabFromQuery()
   await auditStore.fetchTask(taskId)
   if (auditStore.currentTask?.status === 'succeeded') {
     await auditStore.fetchReport(taskId)
@@ -34,6 +49,7 @@ const bottomTabs =[
   { key: 'timeline' as const, label: '执行流程' },
   { key: 'ranking' as const, label: '函数风险排名 TOP 10' },
   { key: 'warnings' as const, label: '其他潜在风险' },
+  { key: 'reasoning' as const, label: '推理路径' },
 ]
 </script>
 
@@ -118,7 +134,8 @@ const bottomTabs =[
         <div class="flex-1 overflow-y-auto">
           <TimelinePanel v-if="activeBottomTab === 'timeline'" :report="auditStore.currentReport" />
           <RiskRankingTable v-else-if="activeBottomTab === 'ranking'" :vectors="auditStore.top10RiskVectors" />
-          <RiskWarningList v-else :warnings="auditStore.otherWarnings" />
+          <RiskWarningList v-else-if="activeBottomTab === 'warnings'" :warnings="auditStore.otherWarnings" />
+          <ReasoningPathPanel v-else :report="auditStore.currentReport" />
         </div>
       </div>
     </template>

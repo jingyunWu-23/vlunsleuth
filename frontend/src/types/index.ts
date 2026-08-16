@@ -84,6 +84,22 @@ export const SEVERITY_LABELS: Record<Severity, string> = {
   low: '低',
 }
 
+export type RiskLevel = Severity | 'none'
+
+export const RISK_LEVEL_LABELS: Record<RiskLevel, string> = {
+  high: '高',
+  medium: '中',
+  low: '低',
+  none: '无',
+}
+
+export const RISK_LEVEL_COLORS: Record<RiskLevel, string> = {
+  high: 'bg-red-600 text-white',
+  medium: 'bg-orange-500 text-white',
+  low: 'bg-yellow-500 text-black',
+  none: 'bg-gray-600 text-white',
+}
+
 // ============= Audit Task =============
 export interface AuditTask {
   task_id: string
@@ -105,6 +121,7 @@ export interface AuditTask {
   started_at?: string
   finished_at?: string
   summary?: AuditSummary
+  events?: PipelineLogEvent[]
 }
 
 export interface AuditSummary {
@@ -134,6 +151,37 @@ export interface TaskEvent {
   event_type: string
   message: string
   payload?: Record<string, unknown>
+}
+
+export interface PipelineLogEvent {
+  time: string
+  type: string
+  message: string
+}
+
+export type StageLogStatus =
+  | 'done'
+  | 'running'
+  | 'pending'
+  | 'skipped'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted'
+
+export interface PipelineStageLog {
+  key: string
+  label: string
+  status: StageLogStatus
+  seconds?: number | null
+  progress_start?: number | null
+  progress_end?: number | null
+}
+
+export interface TaskLogsData {
+  task: AuditTask
+  stages: PipelineStageLog[]
+  total_seconds?: number | null
+  events: PipelineLogEvent[]
 }
 
 // ============= Audit Request =============
@@ -224,6 +272,7 @@ export interface Finding {
   risk_type_freeform?: string
   trust_level?: string
   requires_human_review?: boolean
+  reasoning?: FindingReasoning
 }
 
 export interface Warning {
@@ -246,6 +295,38 @@ export interface RepairSuggestion {
   patch_pattern?: string
   original_snippet?: string
   post_fix_checks?: string[]
+}
+
+export interface ReasoningLocation {
+  line?: number
+  code?: string
+  reason?: string
+  start_line?: number
+  end_line?: number
+}
+
+export interface ReasoningVerificationPlan {
+  goal?: string
+  static_checks?: string[]
+  dynamic_checks?: string[]
+}
+
+export interface FindingReasoning {
+  status?: FindingStatus
+  candidate_vulnerability?: VulnerabilityId
+  summary?: string
+  reasoning?: string[]
+  location?: ReasoningLocation[]
+  verification_plan?: ReasoningVerificationPlan
+  repair_suggestion?: RepairSuggestion
+  confidence_adjustment?: number
+}
+
+export interface ReasoningGateMeta {
+  max_candidates: number
+  selected_count: number
+  selected_function_ids: string[]
+  reasons: Record<string, string[]>
 }
 
 export interface WorkflowMeta {
@@ -291,6 +372,7 @@ export interface AuditReport {
   warnings: Warning[]
   metadata?: Record<string, unknown> & {
     contract_summary?: ContractSummary
+    reasoning_gate?: ReasoningGateMeta
   }
 }
 
